@@ -1,4 +1,11 @@
-# Testground
+# Testground (Fork)
+
+This is a fork of the official Testground project, developed and maintained by KIHumy.
+Original repository: [https://github.com/testground/testground] (https://github.com/testground/testground)
+
+##Changes
+
+-Updated README to clarify that this is a fork of the original Testground project.
 
 ![Testground logo](https://raw.githubusercontent.com/testground/pm/master/logo/TG_Banner_GitHub.jpg)
 
