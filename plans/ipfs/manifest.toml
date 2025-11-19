@@ -1,0 +1,40 @@
+name = "ipfs"
+[defaults]
+builder = "docker:go"
+runner = "local:docker"
+
+[builders."docker:go"]
+enabled = true
+go_version = "1.24"
+build_base_image ="golang:1.24.3-bookworm"
+module_path = "github.com/your/module/name"
+
+[runners."local:docker"]
+enabled = true
+
+[runners."local:exec"]
+enabled = true
+
+[runners."cluster:k8s"]
+enabled = true
+
+[[testcases]]
+name = "ipfsDemo"
+instances = { min = 2, max = 30, default = 10 }
+
+   [testcases.params]
+   churnMode = { type = "string", desc = "describes the churn mode down or downAndRecover", default = "downAndRecover" }
+   distribution = { type = "string", desc = "describes the distribution normal or weibull or logNormal", default = "normal" }
+   numberOfEvent = { type = "int", desc = "describes the number of nodes that join or exit the network combined per intervall", default = "3" }
+   timePeriodString = { type = "string", desc = "describes the control intervall", default = "30s" }
+   availability = { type = "float64", desc = "describes how much of the nodes lifetime the node is actually on", default = "0.3" }
+   countBootstrapPeers = { type = "int", desc = "describes how many nodes will serve as IPFS bootstrapper", default = "3" }
+   numberOfRecords = { type = "int", desc = "describes how many of the records availabel in the network are stored at each node (does not change the overall number of records in the system)", default = "1" }
+   bootstrappersSuceptibleToChurn = { type = "bool", desc = "are bootstrappers suceptible to churn or not?", default = "false" }
+   clientSuceptibleToChurn = { type = "bool", desc = "are clients suceptible to churn or not?", default = "true"}
+   downloadTimeout = { type = "string", desc = "describes how much time the nodes have to download a record before it Timesout", default = "30s" }
+   lambdaScaleParameter = { type = "float64", desc = "is the lambda in a weibull distribution formula only active if default distribution is not used", default = "1" }
+   kShapeParameter = { type = "float64", desc = "is the k parameter in a wibull distribution formula only active if default distribution is not used", default = "0.5" }
+
+[build.env]
+GOPROXY = "https://proxy.golang.org,direct"
