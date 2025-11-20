@@ -177,23 +177,23 @@ func (controlServer *controlServer) bootstrapAssistance() { //written by maintai
 	}
 	controlServer.globalNodeTable = nodeTable
 	controlServer.environment.RecordMessage("Initialization of node Table Sucessfull!")
-	var churnTable []basicNodeInfo //table of all nodes which participate in the node churn so only ones with churnable = true
-	for _, newChurningNode := range nodeTable {
-		if newChurningNode.churnable {
-			churnTable = append(churnTable, newChurningNode)
-		} else {
-			continue
-		}
-	}
+	//var churnTable []basicNodeInfo //table of all nodes which participate in the node churn so only ones with churnable = true
+	//for _, newChurningNode := range nodeTable {
+	//	if newChurningNode.churnable {
+	//		churnTable = append(churnTable, newChurningNode)
+	//	} else {
+	//		continue
+	//	}
+	//}
 
-	var bootStrappersInfoMessage string //generate message with all the information necessary for the bootstrappers to work
-	bootStrappersInfoMessage = "??"
-	for _, node := range nodeTable {
-		if node.role == "bootstrapper" {
-			bootStrappersInfoMessage = bootStrappersInfoMessage + "--" + node.nodeAdress.String()
-		}
-	}
-	controlServer.environment.RecordMessage("Created Bootstrappers Info message: %v", bootStrappersInfoMessage)
+	//var bootStrappersInfoMessage string //generate message with all the information necessary for the bootstrappers to work
+	//bootStrappersInfoMessage = "??"
+	//for _, node := range nodeTable {
+	//	if node.role == "bootstrapper" {
+	//		bootStrappersInfoMessage = bootStrappersInfoMessage + "--" + node.nodeAdress.String()
+	//	}
+	//}
+	//controlServer.environment.RecordMessage("Created Bootstrappers Info message: %v", bootStrappersInfoMessage)
 	var activeConnectionsWithoutDuplicate []net.Conn //generated to remove duplicates and only remember active connections
 	for len(activeConnectionsWithoutDuplicate) < controlServer.environment.TestInstanceCount-1 {
 		connectionToNode := <-controlServer.establishedConnections
@@ -213,16 +213,16 @@ func (controlServer *controlServer) bootstrapAssistance() { //written by maintai
 	//		controlServer.environment.RecordMessage("Sending the %v bytes Bootstrap information was succesful!", numberOfByte)
 	//	}
 	//} //end of section to remove
-	for _, currentConnection := range controlServer.activeConnections {
-		adress := currentConnection.RemoteAddr().String()
-		for _, node := range controlServer.globalNodeTable {
-			if node.role == "bootstrapper" && adress == node.nodeAdress.String() {
-				controlServer.requestBootstrapInfo(currentConnection)
-				controlServer.environment.RecordMessage("Requested the bootstrap inormation from a bootstrapper.")
-
-			}
-		}
-	}
+	//for _, currentConnection := range controlServer.activeConnections {
+	//	adress := currentConnection.RemoteAddr().String()
+	//	for _, node := range controlServer.globalNodeTable {
+	//		if node.role == "bootstrapper" && adress == node.nodeAdress.String() {
+	//			controlServer.requestBootstrapInfo(currentConnection)
+	//			controlServer.environment.RecordMessage("Requested the bootstrap inormation from a bootstrapper.")
+	//
+	//		}
+	//	}
+	//}
 
 	for controlServer.isBootstrapPhase {
 		time.Sleep(10 * time.Second)

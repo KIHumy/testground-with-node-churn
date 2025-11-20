@@ -93,10 +93,12 @@ func (clientControl *clientControl) ipfsChurnHandler() {
 			result = customIPFSNetworkBootstrap(clientControl.environment, clientControl, nodeAPI, newCancelContext)
 			if result == "bootstrapFailed" {
 				clientControl.environment.RecordMessage("Bootstrap failed bootstrappers may be offline.")
+			} else if result == "" {
+				clientControl.environment.RecordMessage("Bootstrap was successfull.")
 			}
-			if clientControl.myRole == "bootstrapper" {
-				clientControl.updateMyBootstrapInformation()
-			}
+			//if clientControl.myRole == "bootstrapper" {
+			//	clientControl.updateMyBootstrapInformation()
+			//}
 			//}
 			//clientControl.recoverFunctionIPFS()
 			clientControl.clientChurnSynchronisation.Unlock() //unly proceed with network behaviour after startup process is finished

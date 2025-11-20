@@ -298,6 +298,9 @@ func createTempRepo(runenv *runtime.RunEnv, clientControl *clientControl, testNe
 	runenv.RecordMessage("This is my announce String: %v", announceString)
 	cfg.Addresses.Announce = append(cfg.Addresses.Announce, announceString)
 	//clientControl.sleepAndJitter()
+	if clientControl.myRole == "bootstrapper" {
+		clientControl.updateMyBootstrapInformation()
+	}
 	clientControl.requestNetworkBootstrapInfo()
 	clientControl.setNetworkBootstrapInformation()
 	cfg.Bootstrap = clientControl.returnTheNetworkBootstrappers()
