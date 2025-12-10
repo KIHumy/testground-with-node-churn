@@ -24,26 +24,30 @@ type basicNodeInfo struct { //the way node informations are stored at the contro
 }
 
 type controlServer struct {
-	controlAddr                  net.Addr
-	listener                     net.Listener
-	environment                  *runtime.RunEnv
-	nodeInfoChannel              chan basicNodeInfo
-	establishedConnections       chan net.Conn
-	bootstrapInfo                []string
-	globalNodeTable              []basicNodeInfo
-	activeConnections            []net.Conn
-	numberOfNetworkBootstrappers int
-	isBootstrapPhase             bool
-	readWriteSynchronisation     sync.RWMutex
-	churnFrequency               frequency
-	distribution                 string
-	IPFSCids                     []string
-	currentlyActiveInstances     int
-	testEndFlag                  bool
-	currentlyActiveRoutines      int
-	churnMode                    string
-	readyForChurnCounter         int
-	availability                 float64
+	controlAddr                      net.Addr
+	listener                         net.Listener
+	environment                      *runtime.RunEnv
+	nodeInfoChannel                  chan basicNodeInfo
+	establishedConnections           chan net.Conn
+	bootstrapInfo                    []string
+	globalNodeTable                  []basicNodeInfo
+	activeConnections                []net.Conn
+	numberOfNetworkBootstrappers     int
+	isBootstrapPhase                 bool
+	readWriteSynchronisation         sync.RWMutex
+	churnEndFlagSynchronisation      sync.RWMutex
+	barrierLock                      sync.RWMutex
+	churnFrequency                   frequency
+	distribution                     string
+	IPFSCids                         []string
+	currentlyActiveInstances         int
+	testEndFlag                      bool
+	churnEndFlag                     bool
+	currentlyActiveRoutines          int
+	churnMode                        string
+	readyForChurnCounter             int
+	availability                     float64
+	instanceCompletedShutdownCounter int
 }
 
 func startupChurnController(controlAddr net.Addr, numberOfInitialBootstrappers int, environment *runtime.RunEnv) {
@@ -65,20 +69,22 @@ func startupChurnController(controlAddr net.Addr, numberOfInitialBootstrappers i
 func initiateNewControler(controlAddr net.Addr, numberOfInitialBootstrappers int, environment *runtime.RunEnv) *controlServer {
 
 	return &controlServer{
-		controlAddr:                  controlAddr,
-		environment:                  environment,
-		nodeInfoChannel:              make(chan basicNodeInfo),
-		establishedConnections:       make(chan net.Conn, 100), //do increase this if the instances go beyond 30 also if you have time fix route cause that this blocks programm if to small
-		bootstrapInfo:                []string{},
-		globalNodeTable:              []basicNodeInfo{},
-		activeConnections:            []net.Conn{},
-		numberOfNetworkBootstrappers: numberOfInitialBootstrappers,
-		isBootstrapPhase:             true,
-		IPFSCids:                     []string{},
-		currentlyActiveInstances:     environment.TestInstanceCount - 1, //all active instances in the network - controller
-		testEndFlag:                  false,
-		currentlyActiveRoutines:      0,
-		readyForChurnCounter:         0,
+		controlAddr:                      controlAddr,
+		environment:                      environment,
+		nodeInfoChannel:                  make(chan basicNodeInfo),
+		establishedConnections:           make(chan net.Conn, 100), //do increase this if the instances go beyond 30 also if you have time fix route cause that this blocks programm if to small
+		bootstrapInfo:                    []string{},
+		globalNodeTable:                  []basicNodeInfo{},
+		activeConnections:                []net.Conn{},
+		numberOfNetworkBootstrappers:     numberOfInitialBootstrappers,
+		isBootstrapPhase:                 true,
+		IPFSCids:                         []string{},
+		currentlyActiveInstances:         environment.TestInstanceCount - 1, //all active instances in the network - controller
+		testEndFlag:                      false,
+		churnEndFlag:                     false,
+		currentlyActiveRoutines:          0,
+		readyForChurnCounter:             0,
+		instanceCompletedShutdownCounter: 0,
 	}
 }
 
@@ -301,7 +307,7 @@ func (controlServer *controlServer) instructionHandler(currentConnection net.Con
 			controlServer.readWriteSynchronisation.RUnlock()
 			currentConnection.Write([]byte("!!--bootstrapInfo yet unavailable."))
 		} else {
-			bootstrapInfoAsString := "??"
+			bootstrapInfoAsString := "??bootstrapInfo"
 			for _, nextPart := range controlServer.bootstrapInfo {
 				bootstrapInfoAsString = bootstrapInfoAsString + "--" + nextPart
 			}
@@ -311,15 +317,15 @@ func (controlServer *controlServer) instructionHandler(currentConnection net.Con
 		}
 
 	}
-	if strings.Contains(instruction, "!!--Bootstrap information unavailabel at the moment.") {
+	if strings.Contains(instruction, "!!--Bootstrap information unavailable at the moment.") {
 		time.Sleep(1 * time.Second)
 		controlServer.requestBootstrapInfo(currentConnection)
 	}
-	if strings.Contains(instruction, "!!--Please send me the availabel CIDs in the Network.") {
+	if strings.Contains(instruction, "!!--Please send me the available CIDs in the Network.") {
 		controlServer.readWriteSynchronisation.RLock()
 		if len(controlServer.IPFSCids) == 0 {
 			controlServer.readWriteSynchronisation.RUnlock()
-			currentConnection.Write([]byte("!!--Currently no recorded Cids."))
+			currentConnection.Write([]byte("!!--Currently no recorded CIDs."))
 		} else {
 			controlServer.readWriteSynchronisation.RUnlock()
 			messageString := "??netIPFSCids"
@@ -340,17 +346,18 @@ func (controlServer *controlServer) instructionHandler(currentConnection net.Con
 		if controlServer.currentlyActiveInstances == 0 {
 			connSlice := controlServer.activeConnections
 			controlServer.readWriteSynchronisation.RUnlock()
+			controlServer.changeChurnEndFlag()
 			for _, conn := range connSlice {
 				conn.Write([]byte("??--Test ended you can close now."))
 			}
-			time.Sleep(30 * time.Second) //sleep to make sure everyone got the message
+			controlServer.barrierBeforeUltimateShutdown()
 			controlServer.environment.RecordMessage("The test ended the Churn controller will now shut down.")
 			controlServer.readWriteSynchronisation.Lock()
 			controlServer.testEndFlag = true //synchronisation flag to shut down all relevant functions of the controller
 			controlServer.readWriteSynchronisation.Unlock()
 			controlServer.listener.Close()
 			controlServer.routineServerShutdownBarrier()
-			time.Sleep(30 * time.Second)
+			//time.Sleep(30 * time.Second)
 			controlServer.environment.RecordMessage("Open Goroutines after shutdown: %v", goruntime.NumGoroutine())
 		} else {
 			controlServer.readWriteSynchronisation.RUnlock()
@@ -360,6 +367,11 @@ func (controlServer *controlServer) instructionHandler(currentConnection net.Con
 		controlServer.readWriteSynchronisation.Lock()
 		controlServer.readyForChurnCounter = controlServer.readyForChurnCounter + 1
 		controlServer.readWriteSynchronisation.Unlock()
+	}
+	if strings.Contains(instruction, "!!--Shutdown finished.") {
+		controlServer.barrierLock.Lock()
+		controlServer.instanceCompletedShutdownCounter = controlServer.instanceCompletedShutdownCounter + 1
+		controlServer.barrierLock.Unlock()
 	}
 }
 
@@ -430,5 +442,23 @@ func (controlServer *controlServer) controlServerMessageSlicer(message string, c
 			go controlServer.writeToNodeInfoChannel(connection, string(oneMessage))
 		}
 	}
+	return
+}
+
+func (controlServer *controlServer) changeChurnEndFlag() {
+	controlServer.churnEndFlagSynchronisation.Lock()
+	controlServer.churnEndFlag = true
+	controlServer.churnEndFlagSynchronisation.Unlock()
+	return
+}
+
+func (controlServer *controlServer) barrierBeforeUltimateShutdown() {
+	controlServer.barrierLock.RLock()
+	for controlServer.instanceCompletedShutdownCounter < controlServer.environment.TestInstanceCount-1 {
+		controlServer.barrierLock.RUnlock()
+		time.Sleep(1 * time.Second)
+		controlServer.barrierLock.RLock()
+	}
+	controlServer.barrierLock.RUnlock()
 	return
 }

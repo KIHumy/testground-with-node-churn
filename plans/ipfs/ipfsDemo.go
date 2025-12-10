@@ -48,7 +48,7 @@ import (
 // Adjustments: Added some comments for better understanding.
 // --- Begin of copied section (Testground) ---
 func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //Initialization of test copied from pingpong.go
-	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Hour)
 	defer cancel()
 
 	runenv.RecordMessage("before sync.MustBoundClient")
@@ -96,6 +96,9 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 
 	// --- End of copied section ---
 
+	patienceString := runenv.StringParam("patience")
+	patience, errPatience := time.ParseDuration(patienceString)
+	patienceEnabled := runenv.BooleanParam("patienceEnabled")
 	var countBootstrapPeers int64 //this block is written by maitainer (TODO:initialize countBootstrapPeers over testinputvalue)
 	countBootstrapPeers = int64(runenv.IntParam("countBootstrapPeers"))
 	var churnable string //this variable should com from input parameters
@@ -104,9 +107,9 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 	clientSuceptibleToChurn := runenv.BooleanParam("clientSuceptibleToChurn")
 	downloadTimeoutString := runenv.StringParam("downloadTimeout")
 	downloadTimeout, err := time.ParseDuration(downloadTimeoutString)
-	countBootstrapPeers, numberOfRecords, downloadTimeout = sanitizeIPFSInputs(countBootstrapPeers, numberOfRecords, downloadTimeout, err, runenv)
+	countBootstrapPeers, numberOfRecords, downloadTimeout, patience = sanitizeIPFSInputs(countBootstrapPeers, numberOfRecords, downloadTimeout, err, patience, errPatience, runenv)
 
-	testNetIP, controlNetIP, rolePrefix := whichIpIsMyNetwork(instanceAddrs, runenv)
+	testNetIP, controlNetIP, rolePrefix := whichIpIsMyNetwork(instanceAddrs, netclient, runenv)
 	runenv.RecordMessage("Normal IP: %v", testNetIP.String())
 	runenv.RecordMessage("Control IP: %v", controlNetIP.String())
 	myRole := whatRoleAmI(rolePrefix, testNetIP, countBootstrapPeers, runenv) //check if this instance is a bootstrap node (written by maintainer)
@@ -141,17 +144,13 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 
 		//initialization of the client control and usage. This startup Process is not in the respective file because the
 		//client needs to have access to the clientControl object to access it's functions.
-		clientControlInstance := initiateNewClientControl(connectionToControler, myRole, runenv)
+		clientControlInstance := initiateNewClientControl(connectionToControler, myRole, patience, patienceEnabled, runenv)
 		clientControlInstance.increaseActiveRoutineCounter()
 		go clientControlInstance.clientChurnReader()
 		//end of the clientControl initialization
 
 		runenv.RecordMessage("I reached the writing block!")
-		numberOfBytes, err := connectionToControler.Write([]byte("??nodeInfo--" + myRole + "--" + churnable)) //tell node information to churn controller
-		if err != nil {
-			runenv.RecordMessage("Write to controller failed with: %v", err)
-		}
-		runenv.RecordMessage("Wrote %v bytes to controller", numberOfBytes)
+		clientControlInstance.communicateNodeInfoToController(myRole, churnable)
 
 		//spawn one ipfs-node per testground-instance (written by maintainer)
 		//bootstrapMultiAdressesList, err := generateBootstrapList(runenv, arrayOfBootstrapIps)
@@ -187,10 +186,11 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 		outputDirectoryNumber := 0
 		clientControlInstance.reportInstanceReadyForChurn()
 		clientControlInstance.barrierBeforeChurn()
+		clientControlInstance.startFrustrationTimer()
 		for {
 			//clientControlInstance.clientChurnSynchronisation.Lock()
 			responseString := clientNetworkBehaviour(clientControlInstance, runenv, clientControlInstance.clientIPFSNode, clientControlInstance.context, clientControlInstance.nodeAPI, outputDirectoryNumber, newRandomizer, downloadTimeout)
-			if responseString == "Finished plan." || (responseString == "canceled" && clientControlInstance.churnMode == "down") {
+			if responseString == "Finished plan." || (responseString == "canceled" && clientControlInstance.churnMode == "down") || clientControlInstance.checkFrustration() {
 				clientControlInstance.announcePlanFinished()
 				clientControlInstance.awaitCloseSignalAndCloseClientControl()
 				select {
@@ -198,10 +198,24 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 					runenv.RecordMessage("Context already canceled node should be closed.")
 				default:
 					clientControlInstance.contextCancelFunc()
-					node.Close()
+					for _, connection := range node.PeerHost.Network().Conns() {
+						connection.Close()
+					}
+					err := node.PeerHost.Close()
+					if err != nil {
+						runenv.RecordMessage("PeerHost closure failed with: %v", err)
+					}
+					err = node.DHT.Close()
+					if err != nil {
+						runenv.RecordMessage("PeerHost closure failed with: %v", err)
+					}
+					err = node.Close()
+					if err != nil {
+						runenv.RecordMessage("Peer closure failed with: %v", err)
+					}
 				}
 				runenv.RecordMessage("Instance finished the plan.")
-				time.Sleep(30 * time.Second)
+				//time.Sleep(60 * time.Second)
 				runenv.RecordMessage("Open Goroutines after shutdown: %v", goruntime.NumGoroutine())
 				return nil
 			}
@@ -209,6 +223,7 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 				continue
 			} else {
 				outputDirectoryNumber = outputDirectoryNumber + 1
+				clientControlInstance.resetFrustration()
 			}
 		}
 	}
@@ -482,15 +497,17 @@ func whatRoleAmI(rolePrefix string, testNetIP net.Addr, countBootstrapPeers int6
 	}
 }
 
-func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, runenv *runtime.RunEnv) (net.Addr, net.Addr, string) { //get network ip (written by maintainer)
+func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, netClient *network.Client, runenv *runtime.RunEnv) (net.Addr, net.Addr, string) { //get network ip (written by maintainer)
 
 	var ownControlNetworkAdress net.Addr
 	var ownNetworkAdress net.Addr
 	var rolePrefix string
+	outputValue, _ := netClient.GetDataNetworkIP()
+	ownNetworkAdressString := outputValue.String()
 	for _, adress := range adressesOfNetwork {
 		splittedAdress := strings.Split(adress.String(), "/")
 		praefixLength := splittedAdress[len(splittedAdress)-1]
-		if praefixLength == "16" && (strings.Split(splittedAdress[0], ".")[0] == "16" && strings.Split(splittedAdress[0], ".")[2] == "0") {
+		if splittedAdress[0] == ownNetworkAdressString {
 			ownNetworkAdress = adress
 			rolePrefix = strings.Split(splittedAdress[0], ".")[3]
 		}
@@ -498,6 +515,7 @@ func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, runenv *runtime.RunEnv) (n
 			ownControlNetworkAdress = adress
 		}
 	}
+	runenv.RecordMessage("Adress in Data Network is: %v.", ownNetworkAdress)
 	runenv.RecordMessage("Adress in Control Network is: %v", ownControlNetworkAdress)
 	return ownNetworkAdress, ownControlNetworkAdress, rolePrefix
 }
@@ -766,7 +784,7 @@ func customIPFSNetworkBootstrap(runenv *runtime.RunEnv, clientControl *clientCon
 	return ""
 }
 
-func sanitizeIPFSInputs(countBootstrapPeers int64, numberOfRecords int, downloadTimeout time.Duration, err error, runenv *runtime.RunEnv) (int64, int, time.Duration) {
+func sanitizeIPFSInputs(countBootstrapPeers int64, numberOfRecords int, downloadTimeout time.Duration, err error, patience time.Duration, patienceError error, runenv *runtime.RunEnv) (int64, int, time.Duration, time.Duration) {
 	if countBootstrapPeers < 1 {
 		runenv.RecordMessage("The number of bootstrap peers is lower then 1 the network will not work with that and the number was altered to 1.")
 		countBootstrapPeers = 1
@@ -785,5 +803,9 @@ func sanitizeIPFSInputs(countBootstrapPeers int64, numberOfRecords int, download
 		runenv.RecordMessage("String parsing failed downloadTimeout input value didn't seem to work so will be replaced with 30s (default value).")
 		downloadTimeout = 30 * time.Second
 	}
-	return countBootstrapPeers, numberOfRecords, downloadTimeout
+	if patienceError != nil {
+		runenv.RecordMessage("String parsing failed patience input vlaue didn't seem to work so will be replaced with 5m (default value).")
+		patience = 5 * time.Minute
+	}
+	return countBootstrapPeers, numberOfRecords, downloadTimeout, patience
 }

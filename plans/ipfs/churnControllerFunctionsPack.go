@@ -53,9 +53,15 @@ func (controlServer *controlServer) churnControlThread() {
 	controlServer.signalChurnStart()
 	controlServer.environment.RecordMessage("Starting Churn now.")
 	churnTicker := time.NewTicker(controlServer.churnFrequency.timePeriod)
-	for controlServer.testEndFlag == false {
+	controlServer.churnEndFlagSynchronisation.RLock()
+	for controlServer.churnEndFlag == false {
+		controlServer.churnEndFlagSynchronisation.RUnlock()
 		changedFlag := false
 		signal := <-churnTicker.C
+		controlServer.churnEndFlagSynchronisation.RLock()
+		if controlServer.churnEndFlag {
+			continue
+		}
 		controlServer.environment.RecordMessage("New Churn Test after Ticker signal: %v", signal)
 		for index, node := range controlServer.globalNodeTable {
 			if node.churnable {
@@ -99,6 +105,7 @@ func (controlServer *controlServer) churnControlThread() {
 		}
 	}
 	churnTicker.Stop()
+	controlServer.churnEndFlagSynchronisation.RUnlock()
 	controlServer.decreaseActiveRoutineCounter()
 	return
 }
@@ -193,6 +200,9 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 		controlServer.environment.RecordMessage("Apply Correction Modifier. This means frequency will no longer be maintained.")
 		for indexA, _ := range protoSliceProbability {
 			protoSliceProbability[indexA] = protoSliceProbability[indexA] * correctionModifier
+			if math.IsInf(protoSliceProbability[indexA], 1) || math.IsNaN(protoSliceProbability[indexA]) {
+				protoSliceProbability[indexA] = 1
+			}
 			controlServer.environment.RecordMessage("The new Value is: %v", protoSliceProbability[indexA])
 		}
 	}
@@ -208,7 +218,7 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 			controlServer.environment.RecordMessage("ProbabilityUP is %v ProbabilityDown is %v.", churnProbabilityUp, churnProbabilityDown)
 		}
 	}
-	controlServer.reorderProbabilitys()
+	//controlServer.reorderProbabilitys()
 	controlServer.globalNodeTableSanitizer()
 	return
 }
@@ -311,7 +321,13 @@ func (controlServer *controlServer) globalNodeTableSanitizer() {
 		correctionModifier := 1 / maxValue
 		for indexA, _ := range controlServer.globalNodeTable {
 			controlServer.globalNodeTable[indexA].probabilityUp = controlServer.globalNodeTable[indexA].probabilityUp * correctionModifier
+			if math.IsInf(controlServer.globalNodeTable[indexA].probabilityUp, 1) || math.IsNaN(controlServer.globalNodeTable[indexA].probabilityUp) {
+				controlServer.globalNodeTable[indexA].probabilityUp = 1
+			}
 			controlServer.globalNodeTable[indexA].probabilityDown = controlServer.globalNodeTable[indexA].probabilityDown * correctionModifier
+			if math.IsInf(controlServer.globalNodeTable[indexA].probabilityDown, 1) || math.IsNaN(controlServer.globalNodeTable[indexA].probabilityDown) {
+				controlServer.globalNodeTable[indexA].probabilityDown = 1
+			}
 			controlServer.environment.RecordMessage("ProbabilityUP is %v ProbabilityDown is %v.", controlServer.globalNodeTable[indexA].probabilityUp, controlServer.globalNodeTable[indexA].probabilityDown)
 		}
 	}

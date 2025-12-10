@@ -44,6 +44,11 @@ func (clientControl *clientControl) ipfsChurnHandler() {
 		if instruction == "!!--down" {
 			//clientControl.fullBlock()
 			clientControl.clientChurnSynchronisation.Lock()
+			if clientControl.testEndFlag {
+				clientControl.decreaseActiveRoutineCounter()
+				clientControl.clientChurnSynchronisation.Unlock()
+				return
+			}
 			clientControl.contextCancelFunc()
 			for _, connection := range clientControl.clientIPFSNode.PeerHost.Network().Conns() {
 				connection.Close()
@@ -54,7 +59,7 @@ func (clientControl *clientControl) ipfsChurnHandler() {
 			}
 			err = clientControl.clientIPFSNode.DHT.Close()
 			if err != nil {
-				clientControl.environment.RecordMessage("PeerHost closure failed with: %v", err)
+				clientControl.environment.RecordMessage("DHT closure failed with: %v", err)
 			}
 			//err = clientControl.clientIPFSNode.Repo.Close()
 			//if err != nil {
@@ -62,12 +67,17 @@ func (clientControl *clientControl) ipfsChurnHandler() {
 			//}
 			err = clientControl.clientIPFSNode.Close()
 			if err != nil {
-				clientControl.environment.RecordMessage("PeerHost closure failed with: %v", err)
+				clientControl.environment.RecordMessage("Peer closure failed with: %v", err)
 			}
 			clientControl.clientChurnSynchronisation.Unlock()
 		}
 		if instruction == "!!--recover" {
 			clientControl.clientChurnSynchronisation.Lock() //lock the variables when setting the ipfs node and the context and cancel function of the network behaviour
+			if clientControl.testEndFlag {
+				clientControl.decreaseActiveRoutineCounter()
+				clientControl.clientChurnSynchronisation.Unlock()
+				return
+			}
 			newCancelContext, cancelFunc := context.WithCancel(clientControl.motherContext)
 
 			// The following code is adapted from the IPFS Kubo project.
@@ -82,7 +92,7 @@ func (clientControl *clientControl) ipfsChurnHandler() {
 			}
 			// --- End of adapted section ---
 
-			clientControl.fullUnblock()
+			//clientControl.fullUnblock()
 			clientControl.setCoreIPFSNode(node)
 			clientControl.setIPFSAPI(nodeAPI)
 			clientControl.setCancelContext(newCancelContext, cancelFunc)
