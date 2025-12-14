@@ -68,11 +68,8 @@ func (controlServer *controlServer) churnControlThread() {
 				randomNumber := rand.Float64()
 				controlServer.environment.RecordMessage("The random Number for this instance is: %v and the nodeProbabilityUp is: %v and the nodeProbabilityDown is: %v", randomNumber, node.probabilityUp, node.probabilityDown)
 				if (randomNumber < node.probabilityUp && node.status == "down") || (randomNumber < node.probabilityDown && node.status == "up") {
-					controlServer.environment.RecordMessage("passed 1")
 					if controlServer.churnMode == "down" { //handling of churn if mode is down
-						controlServer.environment.RecordMessage("passed 2")
 						if node.status == "up" {
-							controlServer.environment.RecordMessage("passed 3")
 							controlServer.globalNodeTable[index].status = "down"
 							controlServer.sendDownSignal(node.connectionToTheNode)
 							changedFlag = true
@@ -124,7 +121,6 @@ func (controlServer *controlServer) calculateRuntimeDistributionNormal() {
 	numberOfChurnableNodes = 0
 	for _, node := range controlServer.globalNodeTable {
 		if node.churnable && (node.status == "down" && controlServer.churnMode == "down") == false { //if the probability for churn needs to be recalculated do not count down nodes in mode down to keep frequency of network correct
-			controlServer.environment.RecordMessage("Can this if clause be passed? Or can you not enter the distribution calculation?")
 			numberOfChurnableNodes = numberOfChurnableNodes + 1
 		} else {
 			continue
@@ -133,9 +129,11 @@ func (controlServer *controlServer) calculateRuntimeDistributionNormal() {
 	probabilityOfInstance := float64(controlServer.churnFrequency.numberOfEvent) / numberOfChurnableNodes
 	probabilityOfInstanceUp, probabilityOfInstanceDown := controlServer.calculateAvailabilityIntoProbabilityOfInstance(probabilityOfInstance)
 	for index, _ := range controlServer.globalNodeTable {
-		controlServer.globalNodeTable[index].probabilityUp = probabilityOfInstanceUp
-		controlServer.globalNodeTable[index].probabilityDown = probabilityOfInstanceDown
-		controlServer.environment.RecordMessage("The probability of this instance is %v. Its upProbability is %v. Its downProbability is %v.", probabilityOfInstance, probabilityOfInstanceUp, probabilityOfInstanceDown)
+		if controlServer.globalNodeTable[index].churnable {
+			controlServer.globalNodeTable[index].probabilityUp = probabilityOfInstanceUp
+			controlServer.globalNodeTable[index].probabilityDown = probabilityOfInstanceDown
+			controlServer.environment.RecordMessage("The probability of this instance is %v. Its upProbability is %v. Its downProbability is %v.", probabilityOfInstance, probabilityOfInstanceUp, probabilityOfInstanceDown)
+		}
 	}
 	controlServer.globalNodeTableSanitizer()
 	return
@@ -162,21 +160,7 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 		valueOfProbability := (lambdaScaleParameter * math.Pow(-math.Log(1-hurdle), 1/kShapeParameter)) + 1 //use quantile function to find number of steps each node should make until break add 1 as offset because we cannot churn at zero one is lowest value
 		valueSlice = append(valueSlice, valueOfProbability)
 	}
-	//var minValue float64
-	//for indexA, _ := range valueSlice {
-	//	if indexA == 0 {
-	//		minValue = valueSlice[indexA]
-	//	}
-	//	if valueSlice[indexA] < minValue {
-	//		minValue = valueSlice[indexA]
-	//	}
-	//}
-	//if minValue < 1 {
-	//	scaling := 1 / minValue //this value is computed to scale the number of steps to full steps
-	//	for indexC, _ := range valueSlice {
-	//		valueSlice[indexC] = valueSlice[indexC] * scaling
-	//	}
-	//}
+
 	var protoSliceProbability []float64
 	var probabilitySum float64
 	var frequencyModifier float64
@@ -195,7 +179,7 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 	if controlServer.checkForSliceDidntExceedOne(protoSliceProbability) {
 		controlServer.environment.RecordMessage("Probability calculation was able to apply frequency Modifier sucessfully.")
 	} else {
-		controlServer.environment.RecordMessage("The frequency modifier is: %v this is insecure and can lead to values higher then one in these cases the correction scaler is applied. A new value most close to the frequency scaler.", frequencyModifier)
+		controlServer.environment.RecordMessage("Resulting probabilities have at least one value exceeding 1. Therefore Correction modifier will be calculated.")
 		correctionModifier := controlServer.calculateCorrectionModifier(protoSliceProbability, frequencyModifier)
 		controlServer.environment.RecordMessage("Apply Correction Modifier. This means frequency will no longer be maintained.")
 		for indexA, _ := range protoSliceProbability {
@@ -218,7 +202,6 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 			controlServer.environment.RecordMessage("ProbabilityUP is %v ProbabilityDown is %v.", churnProbabilityUp, churnProbabilityDown)
 		}
 	}
-	//controlServer.reorderProbabilitys()
 	controlServer.globalNodeTableSanitizer()
 	return
 }
@@ -253,8 +236,8 @@ func (controlServer *controlServer) inputSanitizerControlFunctions(numberOfEvent
 		controlServer.environment.RecordMessage("The input value timePeriod couldn't be parsed correctly because of: %v. It was changed to 30s (default value).")
 		timePeriod = 30 * time.Second
 	}
-	if (controlServer.distribution == "normal" || controlServer.distribution == "weibull" || controlServer.distribution == "logNormal") == false {
-		controlServer.environment.RecordMessage("The entered distribution is invalid (valid distributions are: normal, weibull, logNormal) and was altered to normal (default).")
+	if (controlServer.distribution == "normal" || controlServer.distribution == "weibull") == false {
+		controlServer.environment.RecordMessage("The entered distribution is invalid (valid distributions are: normal, weibull) and was altered to normal (default).")
 		controlServer.distribution = "normal"
 	}
 	if (controlServer.churnMode == "down" || controlServer.churnMode == "downAndRecover") == false {
@@ -320,38 +303,17 @@ func (controlServer *controlServer) globalNodeTableSanitizer() {
 		controlServer.environment.RecordMessage("Sanitizer deteced probabilitys higher then one issuing new values. As close as possible to the original one. This step ignores the entered frequency.")
 		correctionModifier := 1 / maxValue
 		for indexA, _ := range controlServer.globalNodeTable {
-			controlServer.globalNodeTable[indexA].probabilityUp = controlServer.globalNodeTable[indexA].probabilityUp * correctionModifier
-			if math.IsInf(controlServer.globalNodeTable[indexA].probabilityUp, 1) || math.IsNaN(controlServer.globalNodeTable[indexA].probabilityUp) {
-				controlServer.globalNodeTable[indexA].probabilityUp = 1
+			if controlServer.globalNodeTable[indexA].churnable {
+				controlServer.globalNodeTable[indexA].probabilityUp = controlServer.globalNodeTable[indexA].probabilityUp * correctionModifier
+				if math.IsInf(controlServer.globalNodeTable[indexA].probabilityUp, 1) || math.IsNaN(controlServer.globalNodeTable[indexA].probabilityUp) {
+					controlServer.globalNodeTable[indexA].probabilityUp = 1
+				}
+				controlServer.globalNodeTable[indexA].probabilityDown = controlServer.globalNodeTable[indexA].probabilityDown * correctionModifier
+				if math.IsInf(controlServer.globalNodeTable[indexA].probabilityDown, 1) || math.IsNaN(controlServer.globalNodeTable[indexA].probabilityDown) {
+					controlServer.globalNodeTable[indexA].probabilityDown = 1
+				}
+				controlServer.environment.RecordMessage("ProbabilityUP is %v ProbabilityDown is %v.", controlServer.globalNodeTable[indexA].probabilityUp, controlServer.globalNodeTable[indexA].probabilityDown)
 			}
-			controlServer.globalNodeTable[indexA].probabilityDown = controlServer.globalNodeTable[indexA].probabilityDown * correctionModifier
-			if math.IsInf(controlServer.globalNodeTable[indexA].probabilityDown, 1) || math.IsNaN(controlServer.globalNodeTable[indexA].probabilityDown) {
-				controlServer.globalNodeTable[indexA].probabilityDown = 1
-			}
-			controlServer.environment.RecordMessage("ProbabilityUP is %v ProbabilityDown is %v.", controlServer.globalNodeTable[indexA].probabilityUp, controlServer.globalNodeTable[indexA].probabilityDown)
 		}
 	}
-}
-
-func (controlServer *controlServer) reorderProbabilitys() {
-	var probabilitys []float64
-	for _, value := range controlServer.globalNodeTable {
-		if value.churnable {
-			probabilitys = append(probabilitys, value.probabilityDown)
-		}
-	}
-	index := len(probabilitys) - 1
-	var invertedProbabilitys []float64
-	for index >= 0 {
-		invertedProbabilitys = append(invertedProbabilitys, probabilitys[index])
-		index = index - 1
-	}
-	indexB := 0
-	for index, _ := range controlServer.globalNodeTable {
-		if controlServer.globalNodeTable[index].churnable {
-			controlServer.globalNodeTable[index].probabilityDown = invertedProbabilitys[indexB]
-			indexB = indexB + 1
-		}
-	}
-
 }

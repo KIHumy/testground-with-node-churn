@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"net"
-	"os/exec"
 	"slices"
 	"strconv"
 	"time"
@@ -18,7 +17,7 @@ import (
 	"github.com/testground/sdk-go/runtime"
 )
 
-type clientControl struct { //written by maintainer (Thorwin Bergholz)
+type clientControl struct {
 	messageChannel              chan string //channel for the client reader (informational)
 	churnChannel                chan string //channel to enable immediate reaktion to churn
 	shutdownChannel             chan string
@@ -49,9 +48,10 @@ type clientControl struct { //written by maintainer (Thorwin Bergholz)
 	patience                    time.Duration
 	patienceEnabled             bool
 	frustrationTimer            context.Context
+	protocol                    string
 }
 
-func initiateNewClientControl(connection net.Conn, myRole string, instancePatience time.Duration, instancePatienceEnabled bool, environment *runtime.RunEnv) *clientControl { //written by maintainer (Thorwin Bergholz)
+func initiateNewClientControl(connection net.Conn, myRole string, instancePatience time.Duration, instancePatienceEnabled bool, protocol string, environment *runtime.RunEnv) *clientControl { //written by maintainer (Thorwin Bergholz)
 	return &clientControl{
 		messageChannel:              make(chan string),
 		churnChannel:                make(chan string),
@@ -70,10 +70,11 @@ func initiateNewClientControl(connection net.Conn, myRole string, instancePatien
 		myRole:                      myRole,
 		patience:                    instancePatience,
 		patienceEnabled:             instancePatienceEnabled,
+		protocol:                    protocol,
 	}
 }
 
-func (clientControl *clientControl) clientChurnReader() { //written by maintainer (Thorwin Bergholz)
+func (clientControl *clientControl) clientChurnReader() {
 	clientReadBuff := make([]byte, 2048)
 	for {
 		clientControl.connectionToController.SetReadDeadline(time.Now().Add(30 * time.Second))
@@ -95,20 +96,6 @@ func (clientControl *clientControl) clientChurnReader() { //written by maintaine
 		go clientControl.clientSideMessageSlicer(string(message))
 	}
 }
-
-//func (clientControl *clientControl) returnBootstrapInformation() []string { //written by maintainer (Thorwin Bergholz)
-//	var sliceOfBootstrapInformation []string
-//	unProcessedMessage := <-clientControl.messageChannel                             //take bootstrapInformation from the messageChannel
-//	sliceOfBootstrapInformationWithPrefix := strings.Split(unProcessedMessage, "--") //split along seperator
-//	for index, information := range sliceOfBootstrapInformationWithPrefix {          //delete Prefix
-//		if index == 0 {
-//			continue
-//		} else {
-//			sliceOfBootstrapInformation = append(sliceOfBootstrapInformation, information)
-//		}
-//	}
-//	return sliceOfBootstrapInformation //return information as slice of strings
-//}
 
 func (clientControl *clientControl) setNetworkBootstrapInformation() {
 	var bootstrapSlice []string
@@ -153,12 +140,9 @@ func (clientControl *clientControl) setNetCids() {
 	clientControl.netCids = cidSlice
 }
 
-// todo instruction handler is reached but unresponsive
 func (clientControl *clientControl) startInstructionHandler(instruction string) {
 
-	clientControl.environment.RecordMessage("Instruction handler acessed!!!!!!!!")
 	if strings.Contains(instruction, "!!--send the bootstrap information.") { //response if bootstrap information for ipfs node is requested from this node
-		clientControl.environment.RecordMessage("I could reach at least this response.")
 		clientControl.clientSynchronisation.RLock()
 		if clientControl.clientBootstrapInformation == "" {
 			clientControl.sleepAndJitter()
@@ -171,7 +155,6 @@ func (clientControl *clientControl) startInstructionHandler(instruction string) 
 			}
 		} else { //only if clause is reached else some how not i don't know why
 			clientControl.sleepAndJitter()
-			clientControl.environment.RecordMessage("Do you ever enter the ipfs response client.")
 			numberOfBytes, err := clientControl.connectionToController.Write([]byte("??bootstrapListInfo--" + clientControl.clientBootstrapInformation)) //tell node information to churn controller
 			clientControl.clientSynchronisation.RUnlock()
 			if err != nil {
@@ -200,7 +183,7 @@ func (clientControl *clientControl) startInstructionHandler(instruction string) 
 	}
 }
 
-func (clientControl *clientControl) requestNetworkBootstrapInfo() { //request the network bootstrap info
+func (clientControl *clientControl) requestNetworkBootstrapInfo() { //Request the network bootstrap info.
 	clientControl.connectionToController.Write([]byte("!!--Please provide me the Bootstrap information."))
 	clientControl.environment.RecordMessage("I requested the bootstrap information.")
 }
@@ -211,7 +194,7 @@ func (clientControl *clientControl) setClientControlBootstrapInformation(bootstr
 	clientControl.clientSynchronisation.Unlock()
 }
 
-func (clientControl *clientControl) sleepAndJitter() { //done to stop bursting and dosing the server
+func (clientControl *clientControl) sleepAndJitter() { //Done to stop bursting and dosing the server.
 	jitter := rand.Intn(10) + 15
 	sleepDuration := strconv.Itoa(jitter) + "s"
 	sleepTime, error := time.ParseDuration(sleepDuration)
@@ -328,42 +311,6 @@ func (clientControl *clientControl) setMotherContext(ctx context.Context) {
 	clientControl.motherContext = ctx
 }
 
-func (clientControl *clientControl) fullBlock() {
-	err := exec.Command("iptables", "-I", "OUTPUT", "1", "-d", "192.18.0.0/16", "-j", "ACCEPT").Run()
-	if err != nil {
-		clientControl.environment.RecordMessage("Firewall failed with: %v", err)
-	}
-	err = exec.Command("iptables", "-I", "INPUT", "1", "-s", "192.18.0.0/16", "-j", "ACCEPT").Run()
-	if err != nil {
-		clientControl.environment.RecordMessage("Firewall failed with: %v", err)
-	}
-	err = exec.Command("iptables", "-I", "OUTPUT", "1", "-d", clientControl.connectionToController.RemoteAddr().String(), "-j", "ACCEPT").Run()
-	if err != nil {
-		clientControl.environment.RecordMessage("Firewall failed with: %v", err)
-	}
-	err = exec.Command("iptables", "-I", "INPUT", "1", "-s", clientControl.connectionToController.RemoteAddr().String(), "-j", "ACCEPT").Run()
-	if err != nil {
-		clientControl.environment.RecordMessage("Firewall failed with: %v", err)
-	}
-	err = exec.Command("iptables", "-I", "OUTPUT", "3", "-j", "DROP").Run()
-	if err != nil {
-		clientControl.environment.RecordMessage("Firewall failed with: %v", err)
-	}
-	err = exec.Command("iptables", "-I", "INPUT", "3", "-j", "DROP").Run()
-	if err != nil {
-		clientControl.environment.RecordMessage("Firewall failed with: %v", err)
-	}
-}
-
-func (clientControl *clientControl) fullUnblock() {
-	for counterA := 0; counterA < 3; counterA++ {
-		exec.Command("iptables", "-D", "INPUT", "1").Run()
-	}
-	for counterB := 0; counterB < 3; counterB++ {
-		exec.Command("iptables", "-D", "OUTPUT", "1").Run()
-	}
-}
-
 func sanitizeChurnMode(churnMode string) string {
 	if churnMode != "down" && churnMode != "downAndRecover" {
 		churnMode = "downAndRecover"
@@ -426,20 +373,20 @@ func (clientControl *clientControl) communicateNodeInfoToController(role string,
 	clientControl.environment.RecordMessage("Wrote %v bytes to controller", numberOfBytes)
 }
 
-func (clientControl *clientControl) startFrustrationTimer() { //sets the timer and cancel function that the node tracks how long it did not make progress
+func (clientControl *clientControl) startFrustrationTimer() { //Sets the timer and cancel function so that the node tracks how long it did not make progress.
 	clientControl.patienceSynchronisation.Lock()
 	clientControl.frustrationTimer, clientControl.cancelFrustrationTimer = context.WithTimeout(clientControl.motherContext, clientControl.patience)
 	clientControl.patienceSynchronisation.Unlock()
 }
 
-func (clientControl *clientControl) resetFrustration() { //resets the timer until the node will shutdown if not making progress
+func (clientControl *clientControl) resetFrustration() { //Resets the timer until the node will shutdown if not making progress.
 	clientControl.patienceSynchronisation.Lock()
 	clientControl.cancelFrustrationTimer()
 	clientControl.frustrationTimer, clientControl.cancelFrustrationTimer = context.WithTimeout(clientControl.motherContext, clientControl.patience)
 	clientControl.patienceSynchronisation.Unlock()
 }
 
-func (clientControl *clientControl) checkFrustration() bool { //checks if the timer until a node should make progress has expired or not
+func (clientControl *clientControl) checkFrustration() bool { //Checks if the timer until a node should make progress has expired or not.
 	if clientControl.patienceEnabled {
 		clientControl.patienceSynchronisation.RLock()
 		select {
@@ -453,4 +400,42 @@ func (clientControl *clientControl) checkFrustration() bool { //checks if the ti
 		}
 	}
 	return false //if patience is disabled node will always continue with its tasks
+}
+
+func (clientControl *clientControl) churnHandler() {
+	for {
+		instruction := <-clientControl.churnChannel
+		if instruction == "!!--down" {
+			clientControl.clientChurnSynchronisation.Lock()
+			if clientControl.testEndFlag {
+				clientControl.decreaseActiveRoutineCounter()
+				clientControl.clientChurnSynchronisation.Unlock()
+				return
+			}
+			if clientControl.protocol == "IPFS" {
+				clientControl.ipfsDown()
+			} else {
+				clientControl.environment.RecordMessage("The entered protocol is not available, because of that the protocol will not show a reaction to down and recover.")
+			}
+			clientControl.clientChurnSynchronisation.Unlock()
+		}
+		if instruction == "!!--recover" {
+			clientControl.clientChurnSynchronisation.Lock() //lock the variables when setting the ipfs node and the context and cancel function of the network behaviour
+			if clientControl.testEndFlag {
+				clientControl.decreaseActiveRoutineCounter()
+				clientControl.clientChurnSynchronisation.Unlock()
+				return
+			}
+			if clientControl.protocol == "IPFS" {
+				clientControl.ipfsRecover()
+			} else {
+				clientControl.environment.RecordMessage("The entered protocol is not available, because of that the protocol will not show a reaction to down and recover.")
+			}
+			clientControl.clientChurnSynchronisation.Unlock() //unly proceed with network behaviour after startup process is finished
+		}
+		if clientControl.testEndFlag == true {
+			clientControl.decreaseActiveRoutineCounter()
+			return
+		}
+	}
 }

@@ -13,7 +13,7 @@ import (
 	"github.com/testground/sdk-go/runtime"
 )
 
-type basicNodeInfo struct { //the way node informations are stored at the controller (written by maintainer Thorwin Bergholz)
+type basicNodeInfo struct { //the way node informations are stored at the controller
 	nodeAdress          net.Addr
 	role                string
 	churnable           bool
@@ -23,6 +23,7 @@ type basicNodeInfo struct { //the way node informations are stored at the contro
 	connectionToTheNode net.Conn
 }
 
+// the code for the basic server struct was inspired by the tutorial https://www.youtube.com/watch?v=qJQrrscB1-4
 type controlServer struct {
 	controlAddr                      net.Addr
 	listener                         net.Listener
@@ -33,7 +34,6 @@ type controlServer struct {
 	globalNodeTable                  []basicNodeInfo
 	activeConnections                []net.Conn
 	numberOfNetworkBootstrappers     int
-	isBootstrapPhase                 bool
 	readWriteSynchronisation         sync.RWMutex
 	churnEndFlagSynchronisation      sync.RWMutex
 	barrierLock                      sync.RWMutex
@@ -50,25 +50,10 @@ type controlServer struct {
 	instanceCompletedShutdownCounter int
 }
 
+// the basic server code was inspired by the tutorial https://www.youtube.com/watch?v=qJQrrscB1-4
 func startupChurnController(controlAddr net.Addr, numberOfInitialBootstrappers int, environment *runtime.RunEnv) {
-
-	environment.RecordMessage("starting churn controller...")
-	controlServer := initiateNewControler(controlAddr, numberOfInitialBootstrappers, environment)
-	controlServer.increaseActiveRoutineCounter()
-	go controlServer.bootstrapAssistance()
-	controlServer.increaseActiveRoutineCounter()
-	go controlServer.churnControlThread()
-	err := controlServer.startController()
-	if err != nil {
-		environment.RecordMessage("controller failed with %v", err)
-	}
-	environment.RecordMessage("The adress was: %v", controlServer.controlAddr.String())
-	environment.RecordMessage("The network was: %v", controlServer.controlAddr.Network())
-}
-
-func initiateNewControler(controlAddr net.Addr, numberOfInitialBootstrappers int, environment *runtime.RunEnv) *controlServer {
-
-	return &controlServer{
+	environment.RecordMessage("Initialize churn controller.")
+	controlServer := &controlServer{
 		controlAddr:                      controlAddr,
 		environment:                      environment,
 		nodeInfoChannel:                  make(chan basicNodeInfo),
@@ -76,8 +61,6 @@ func initiateNewControler(controlAddr net.Addr, numberOfInitialBootstrappers int
 		bootstrapInfo:                    []string{},
 		globalNodeTable:                  []basicNodeInfo{},
 		activeConnections:                []net.Conn{},
-		numberOfNetworkBootstrappers:     numberOfInitialBootstrappers,
-		isBootstrapPhase:                 true,
 		IPFSCids:                         []string{},
 		currentlyActiveInstances:         environment.TestInstanceCount - 1, //all active instances in the network - controller
 		testEndFlag:                      false,
@@ -85,44 +68,51 @@ func initiateNewControler(controlAddr net.Addr, numberOfInitialBootstrappers int
 		currentlyActiveRoutines:          0,
 		readyForChurnCounter:             0,
 		instanceCompletedShutdownCounter: 0,
+		numberOfNetworkBootstrappers:     numberOfInitialBootstrappers,
 	}
-}
-
-func (controlServer *controlServer) startController() error {
 	defer close(controlServer.nodeInfoChannel)
 	defer close(controlServer.establishedConnections)
-	controlListener, err := net.Listen("tcp4", strings.Split(controlServer.controlAddr.String(), "/")[0]+":4500")
-	controlServer.environment.RecordMessage("The listeners adress is: %v", controlListener.Addr())
-	if err != nil {
-		return err
-	}
+	environment.RecordMessage("Churn controller initialized. Begin operation.")
 
-	defer controlListener.Close()
-	controlServer.listener = controlListener
-
-	var waitGroup sync.WaitGroup
 	controlServer.increaseActiveRoutineCounter()
+	go controlServer.bootstrapAssistance()
+
+	controlServer.increaseActiveRoutineCounter()
+	go controlServer.churnControlThread()
+
+	controlServer.increaseActiveRoutineCounter()
+	var waitGroup sync.WaitGroup
 	waitGroup.Add(1)
-	go controlServer.acceptanceRoutine(&waitGroup)
+	go controlServer.startUpListener(&waitGroup)
 
 	waitGroup.Wait()
 
-	return nil
+	environment.RecordMessage("The adress was: %v", controlServer.controlAddr.String())
+	environment.RecordMessage("The network was: %v", controlServer.controlAddr.Network())
 }
 
-func (controlServer *controlServer) acceptanceRoutine(waitGroup *sync.WaitGroup) {
+// the basic code how to create a listener and how to accept connections was inspired by the tutorial https://www.youtube.com/watch?v=qJQrrscB1-4
+func (controlServer *controlServer) startUpListener(waitGroup *sync.WaitGroup) {
 	defer waitGroup.Done()
+	var err error
+	controlServer.listener, err = net.Listen("tcp4", strings.Split(controlServer.controlAddr.String(), "/")[0]+":4500")
+	if err != nil {
+		controlServer.environment.RecordMessage("Failed to set up Listener.")
+		return
+	}
+	defer controlServer.listener.Close()
+	controlServer.environment.RecordMessage("Listener has been initialized successfuly. Start accepting connections.")
 
 	for {
 		connection, err := controlServer.listener.Accept()
 		controlServer.readWriteSynchronisation.RLock()
 		if err != nil && controlServer.testEndFlag == false {
 			controlServer.readWriteSynchronisation.RUnlock()
-			controlServer.environment.RecordMessage("Connection failed, but continue! Error is: %v", err)
+			controlServer.environment.RecordMessage("Connection failed. The listener proceeds will proceed accepting othe messages. The error was: %v", err)
 			continue
 		} else if controlServer.testEndFlag {
 			controlServer.readWriteSynchronisation.RUnlock()
-			controlServer.environment.RecordMessage("Controller acepptance routine shuts down.")
+			controlServer.environment.RecordMessage("Listener shuts down.")
 			controlServer.decreaseActiveRoutineCounter()
 			return
 		} else {
@@ -135,9 +125,10 @@ func (controlServer *controlServer) acceptanceRoutine(waitGroup *sync.WaitGroup)
 	}
 }
 
+// the basic reader code of this function was inspired by https://www.youtube.com/watch?v=qJQrrscB1-4
 func (controlServer *controlServer) readingRoutine(connection net.Conn) {
-
 	defer connection.Close()
+
 	readBuff := make([]byte, 2048)
 
 	for {
@@ -157,17 +148,14 @@ func (controlServer *controlServer) readingRoutine(connection net.Conn) {
 		} else {
 			controlServer.readWriteSynchronisation.RUnlock()
 		}
-		message := readBuff[:numberOfMessageBytes]
-
-		go controlServer.controlServerMessageSlicer(string(message), connection)
+		go controlServer.controlServerMessageSlicer(string(readBuff[:numberOfMessageBytes]), connection)
 
 	}
 }
 
-func (controlServer *controlServer) bootstrapAssistance() { //written by maintainer (Thorwin Bergholz)
+func (controlServer *controlServer) bootstrapAssistance() {
 
-	var nodeTable []basicNodeInfo //table consisting of all the network information (so all instances execpt controller)
-	controlServer.environment.RecordMessage("Churn Controller entered churn control.")
+	var nodeTable []basicNodeInfo                                        //table consisting of all the network information (so all instances execpt controller)
 	for len(nodeTable) < controlServer.environment.TestInstanceCount-1 { //do not proceed until node map has been build. Subtract one because churn controller is counted as instance.
 
 		newNodeInfo := <-controlServer.nodeInfoChannel
@@ -183,23 +171,6 @@ func (controlServer *controlServer) bootstrapAssistance() { //written by maintai
 	}
 	controlServer.globalNodeTable = nodeTable
 	controlServer.environment.RecordMessage("Initialization of node Table Sucessfull!")
-	//var churnTable []basicNodeInfo //table of all nodes which participate in the node churn so only ones with churnable = true
-	//for _, newChurningNode := range nodeTable {
-	//	if newChurningNode.churnable {
-	//		churnTable = append(churnTable, newChurningNode)
-	//	} else {
-	//		continue
-	//	}
-	//}
-
-	//var bootStrappersInfoMessage string //generate message with all the information necessary for the bootstrappers to work
-	//bootStrappersInfoMessage = "??"
-	//for _, node := range nodeTable {
-	//	if node.role == "bootstrapper" {
-	//		bootStrappersInfoMessage = bootStrappersInfoMessage + "--" + node.nodeAdress.String()
-	//	}
-	//}
-	//controlServer.environment.RecordMessage("Created Bootstrappers Info message: %v", bootStrappersInfoMessage)
 	var activeConnectionsWithoutDuplicate []net.Conn //generated to remove duplicates and only remember active connections
 	for len(activeConnectionsWithoutDuplicate) < controlServer.environment.TestInstanceCount-1 {
 		connectionToNode := <-controlServer.establishedConnections
@@ -210,38 +181,10 @@ func (controlServer *controlServer) bootstrapAssistance() { //written by maintai
 		}
 	}
 	controlServer.activeConnections = activeConnectionsWithoutDuplicate
-	controlServer.environment.RecordMessage("Initialization of all tables was successful begin now sending step to provide bootstrapinformation to clients.")
-	//for _, nextRecipient := range activeConnectionsWithoutDuplicate { //TODO replace with correct step when finished
-	//	numberOfByte, err := nextRecipient.Write([]byte(bootStrappersInfoMessage))
-	//	if err != nil {
-	//		controlServer.environment.RecordMessage("Sending of the bootstrapp information to %v failed with: %v", nextRecipient.RemoteAddr().String(), err)
-	//	} else {
-	//		controlServer.environment.RecordMessage("Sending the %v bytes Bootstrap information was succesful!", numberOfByte)
-	//	}
-	//} //end of section to remove
-	//for _, currentConnection := range controlServer.activeConnections {
-	//	adress := currentConnection.RemoteAddr().String()
-	//	for _, node := range controlServer.globalNodeTable {
-	//		if node.role == "bootstrapper" && adress == node.nodeAdress.String() {
-	//			controlServer.requestBootstrapInfo(currentConnection)
-	//			controlServer.environment.RecordMessage("Requested the bootstrap inormation from a bootstrapper.")
-	//
-	//		}
-	//	}
-	//}
-
-	for controlServer.isBootstrapPhase {
-		time.Sleep(10 * time.Second)
-		if len(controlServer.bootstrapInfo) == controlServer.numberOfNetworkBootstrappers {
-			controlServer.isBootstrapPhase = false
-		}
-	}
-
-	controlServer.environment.RecordMessage("ChurnControl ends before shutdown!")
 	controlServer.decreaseActiveRoutineCounter()
 }
 
-func (controlServer *controlServer) writeToNodeInfoChannel(connection net.Conn, message string) { //function written by maintainer (Thorwin Bergholz)
+func (controlServer *controlServer) writeToNodeInfoChannel(connection net.Conn, message string) {
 
 	messageContent := strings.Split(message, "--")
 	if len(messageContent) == 3 && strings.Contains(message, "??nodeInfo") { //this is 3 at the moment because  strings contain only ??nodeInfo, role and if the node is chunable or not if more is added adjust length
@@ -291,7 +234,7 @@ func (controlServer *controlServer) writeToNodeInfoChannel(connection net.Conn, 
 			}
 		}
 	} else {
-		controlServer.environment.RecordMessage("Invalid Message reached Channel processing for Node Info Channel!")
+		controlServer.environment.RecordMessage("Invalid Message reached Channel processing for Node Info Channel! The message was: %v", message)
 	}
 
 }
@@ -357,7 +300,6 @@ func (controlServer *controlServer) instructionHandler(currentConnection net.Con
 			controlServer.readWriteSynchronisation.Unlock()
 			controlServer.listener.Close()
 			controlServer.routineServerShutdownBarrier()
-			//time.Sleep(30 * time.Second)
 			controlServer.environment.RecordMessage("Open Goroutines after shutdown: %v", goruntime.NumGoroutine())
 		} else {
 			controlServer.readWriteSynchronisation.RUnlock()

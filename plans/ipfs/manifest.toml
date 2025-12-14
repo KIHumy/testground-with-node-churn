@@ -12,19 +12,13 @@ module_path = "github.com/your/module/name"
 [runners."local:docker"]
 enabled = true
 
-[runners."local:exec"]
-enabled = true
-
-[runners."cluster:k8s"]
-enabled = true
-
 [[testcases]]
 name = "ipfsDemo"
-instances = { min = 2, max = 30, default = 10 }
+instances = { min = 2, max = 31, default = 10 }
 
    [testcases.params]
    churnMode = { type = "string", desc = "describes the churn mode down or downAndRecover", default = "downAndRecover" }
-   distribution = { type = "string", desc = "describes the distribution normal or weibull or logNormal", default = "normal" }
+   distribution = { type = "string", desc = "describes the distribution normal or weibull", default = "normal" }
    numberOfEvent = { type = "int", desc = "describes the number of nodes that join or exit the network combined per intervall", default = "3" }
    timePeriodString = { type = "string", desc = "describes the control intervall", default = "30s" }
    availability = { type = "float64", desc = "describes how much of the nodes lifetime the node is actually on", default = "0.3" }

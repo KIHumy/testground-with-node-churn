@@ -8,7 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	goruntime "runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -112,7 +111,7 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 	testNetIP, controlNetIP, rolePrefix := whichIpIsMyNetwork(instanceAddrs, netclient, runenv)
 	runenv.RecordMessage("Normal IP: %v", testNetIP.String())
 	runenv.RecordMessage("Control IP: %v", controlNetIP.String())
-	myRole := whatRoleAmI(rolePrefix, testNetIP, countBootstrapPeers, runenv) //check if this instance is a bootstrap node (written by maintainer)
+	myRole := whatRoleAmI(rolePrefix, testNetIP, countBootstrapPeers, runenv) //check if this instance is a bootstrap node
 
 	if myRole == "bootstrapper" { // check if you are bootstrapper written by maintainer
 		if bootstrappersSuceptibleToChurn {
@@ -144,19 +143,14 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 
 		//initialization of the client control and usage. This startup Process is not in the respective file because the
 		//client needs to have access to the clientControl object to access it's functions.
-		clientControlInstance := initiateNewClientControl(connectionToControler, myRole, patience, patienceEnabled, runenv)
+		clientControlInstance := initiateNewClientControl(connectionToControler, myRole, patience, patienceEnabled, "IPFS", runenv)
 		clientControlInstance.increaseActiveRoutineCounter()
 		go clientControlInstance.clientChurnReader()
 		//end of the clientControl initialization
 
-		runenv.RecordMessage("I reached the writing block!")
 		clientControlInstance.communicateNodeInfoToController(myRole, churnable)
 
-		//spawn one ipfs-node per testground-instance (written by maintainer)
-		//bootstrapMultiAdressesList, err := generateBootstrapList(runenv, arrayOfBootstrapIps)
-		if err != nil {
-			runenv.RecordMessage("Creating BootstrapList failed with: %v", err)
-		}
+		//spawn one ipfs-node per testground-instance
 		clientControlInstance.setNumberOfIPFSRecords(numberOfRecords)
 		ipfsContext, endTheMainFunction := context.WithCancel(ctx)
 		apiOfIPFSNode, node, _ := spawnEphemeral(ipfsContext, runenv, clientControlInstance, testNetIP)
@@ -168,7 +162,7 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 		clientControlInstance.setIPFSAPI(apiOfIPFSNode)
 		clientControlInstance.setCancelContext(ipfsContext, endTheMainFunction)
 		clientControlInstance.increaseActiveRoutineCounter()
-		go clientControlInstance.ipfsChurnHandler()
+		go clientControlInstance.churnHandler()
 		bootstrapConfig, err := generateNewBootstrapRoutine(clientControlInstance) //generates BootstrapRoutine
 		err = node.Bootstrap(bootstrapConfig)                                      //executes Bootstrap however topology seems to be default "fully connected"
 		if err != nil {
@@ -181,14 +175,12 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 		time.Sleep(30 * time.Second)
 		runenv.RecordMessage("I connected later to %v", len(node.PeerHost.Network().Peers()))
 
-		//customIPFSNetworkBootstrap(runenv, clientControlInstance, apiOfIPFSNode, ctx)
 		newRandomizer := rand.New(rand.NewSource(seq))
 		outputDirectoryNumber := 0
 		clientControlInstance.reportInstanceReadyForChurn()
 		clientControlInstance.barrierBeforeChurn()
 		clientControlInstance.startFrustrationTimer()
 		for {
-			//clientControlInstance.clientChurnSynchronisation.Lock()
 			responseString := clientNetworkBehaviour(clientControlInstance, runenv, clientControlInstance.clientIPFSNode, clientControlInstance.context, clientControlInstance.nodeAPI, outputDirectoryNumber, newRandomizer, downloadTimeout)
 			if responseString == "Finished plan." || (responseString == "canceled" && clientControlInstance.churnMode == "down") || clientControlInstance.checkFrustration() {
 				clientControlInstance.announcePlanFinished()
@@ -215,8 +207,6 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 					}
 				}
 				runenv.RecordMessage("Instance finished the plan.")
-				//time.Sleep(60 * time.Second)
-				runenv.RecordMessage("Open Goroutines after shutdown: %v", goruntime.NumGoroutine())
 				return nil
 			}
 			if responseString == "canceled" || responseString == "failure" {
@@ -298,7 +288,6 @@ func createTempRepo(runenv *runtime.RunEnv, clientControl *clientControl, testNe
 	// --- End of copied section ---
 
 	cfg.Swarm.DisableNatPortMap = true //makes the program unable to connect to the lokal hardware to forward traffic
-	//cfg.Addresses.NoAnnounce = []string{"/ip4/0.0.0.0/ipcidr/0"} //ensures no ip adresses are advertised to the outside
 
 	newPort := fmt.Sprintf("%v", clientControl.ipfsPortCounter)
 	cfg.Addresses.Swarm = []string{"/ip4/0.0.0.0/tcp/" + newPort}
@@ -312,7 +301,7 @@ func createTempRepo(runenv *runtime.RunEnv, clientControl *clientControl, testNe
 	runenv.RecordMessage("This is the clientBootstrapInformation %v.", clientControl.clientBootstrapInformation)
 	runenv.RecordMessage("This is my announce String: %v", announceString)
 	cfg.Addresses.Announce = append(cfg.Addresses.Announce, announceString)
-	//clientControl.sleepAndJitter()
+
 	if clientControl.myRole == "bootstrapper" {
 		clientControl.updateMyBootstrapInformation()
 	}
@@ -348,12 +337,11 @@ func createNode(ctx context.Context, repoPath string, runenv *runtime.RunEnv) (*
 	nodeOptions := &core.BuildCfg{
 		Online:  true,
 		Routing: libp2p.DHTOption, // This option sets the node to be a full DHT node (both fetching and storing DHT Records)
-		// Routing: libp2p.DHTClientOption, // This option sets the node to be a client DHT node (only fetching records)
-		Repo: repo,
+		Repo:    repo,
 	}
 	runenv.RecordMessage("Finished initialization of the config.")
 
-	constructedNode, err := core.NewNode(ctx, nodeOptions) //define output as variable to be able to publish information regarding the node (change by maintainer)
+	constructedNode, err := core.NewNode(ctx, nodeOptions) //define output as variable to be able to publish information regarding the node
 	if err != nil {
 		runenv.RecordMessage("Failed to create the new node: %v", err)
 	}
@@ -411,7 +399,7 @@ func spawnEphemeral(ctx context.Context, runenv *runtime.RunEnv, clientControl *
 // Copyright (c) Protocol Labs
 // Adjustments: Changed code for clean integration with Testground. Made the function case sensitive meaning if the context is canceled function exits immediately.
 // A second return value was added to make the circumstances of the return clear to other functions. Added a success message to make result more transparent.
-func connectToPeers(runenv *runtime.RunEnv, ctx context.Context, ipfs icore.CoreAPI, peers []string) (error, string) { //added runenv to this funktion (repo maintainer)
+func connectToPeers(runenv *runtime.RunEnv, ctx context.Context, ipfs icore.CoreAPI, peers []string) (error, string) { //added runenv to this funktion
 	select {
 	case <-ctx.Done():
 		runenv.RecordMessage("Context has been canceled connectToPeers function exits.")
@@ -481,7 +469,7 @@ func getUnixfsNode(path string) (files.Node, error) {
 	return f, nil
 }
 
-func whatRoleAmI(rolePrefix string, testNetIP net.Addr, countBootstrapPeers int64, runenv *runtime.RunEnv) string { //decides if a node is a bootstrap peer or not (written by maintainer)
+func whatRoleAmI(rolePrefix string, testNetIP net.Addr, countBootstrapPeers int64, runenv *runtime.RunEnv) string { //decides if a node is a bootstrap peer or not
 
 	controlIPIndex, _ := strconv.ParseInt(strings.Split(strings.Split(testNetIP.String(), "/")[0], ".")[3], 10, 64)
 
@@ -497,7 +485,7 @@ func whatRoleAmI(rolePrefix string, testNetIP net.Addr, countBootstrapPeers int6
 	}
 }
 
-func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, netClient *network.Client, runenv *runtime.RunEnv) (net.Addr, net.Addr, string) { //get network ip (written by maintainer)
+func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, netClient *network.Client, runenv *runtime.RunEnv) (net.Addr, net.Addr, string) { //get network ip
 
 	var ownControlNetworkAdress net.Addr
 	var ownNetworkAdress net.Addr
@@ -529,7 +517,7 @@ func connectToChurnController(testNetIP net.Addr) (net.Conn, error) {
 	return connectionToController, err
 }
 
-func generateNewBootstrapRoutine(clientControl *clientControl) (bootstrap.BootstrapConfig, error) { //written by maintainer (Thorwin Bergholz)
+func generateNewBootstrapRoutine(clientControl *clientControl) (bootstrap.BootstrapConfig, error) {
 	networkBootstrapInformation := clientControl.returnTheNetworkBootstrappers()
 	var multiAddrSlice []ma.Multiaddr
 	for _, adress := range networkBootstrapInformation {
@@ -688,7 +676,6 @@ func lookUpProviders(runenv *runtime.RunEnv, node *core.IpfsNode, cidAsString st
 func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv, node *core.IpfsNode, ctx context.Context, ipfsAPI icore.CoreAPI, outPutDirectoryNumber int, newRandomizer *rand.Rand, downloadTimeout time.Duration) string {
 	select {
 	case <-ctx.Done():
-		//clientControl.clientChurnSynchronisation.Unlock()
 		return "canceled"
 	default:
 		directoryPrefix := fmt.Sprintf("%voutputDirectory", outPutDirectoryNumber)
@@ -719,7 +706,6 @@ func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv
 			}
 		}
 		if nothingToAppend { //return if nothing is left to download
-			//clientControl.clientChurnSynchronisation.Unlock()
 			return "Finished plan."
 		}
 
@@ -770,7 +756,6 @@ func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv
 		newInstanceCids := []string{}
 		newInstanceCids = append(newInstanceCids, instanceToBeDownloaded)
 		clientControl.setClientCids(newInstanceCids)
-		//clientControl.clientChurnSynchronisation.Unlock()
 		return ""
 	}
 
