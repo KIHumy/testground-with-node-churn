@@ -11,4 +11,4 @@ The basic server code was inspired by:
 - https://www.youtube.com/watch?v=qJQrrscB1-4
 
 ## codebase
-The code that is not marked as belonging to some other source was written by the maintainer (Thorwin Bergholz).
+The code in this directory that is not marked as belonging to some other source was written by the maintainer (Thorwin Bergholz).
