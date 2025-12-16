@@ -64,7 +64,7 @@ func (controlServer *controlServer) churnControlThread() {
 		}
 		controlServer.environment.RecordMessage("New Churn Test after Ticker signal: %v", signal)
 		for index, node := range controlServer.globalNodeTable {
-			if node.churnable {
+			if node.churnable && (controlServer.churnMode == "down" && node.status == "down") == false {
 				randomNumber := rand.Float64()
 				controlServer.environment.RecordMessage("The random Number for this instance is: %v and the nodeProbabilityUp is: %v and the nodeProbabilityDown is: %v", randomNumber, node.probabilityUp, node.probabilityDown)
 				if (randomNumber < node.probabilityUp && node.status == "down") || (randomNumber < node.probabilityDown && node.status == "up") {
@@ -129,7 +129,7 @@ func (controlServer *controlServer) calculateRuntimeDistributionNormal() {
 	probabilityOfInstance := float64(controlServer.churnFrequency.numberOfEvent) / numberOfChurnableNodes
 	probabilityOfInstanceUp, probabilityOfInstanceDown := controlServer.calculateAvailabilityIntoProbabilityOfInstance(probabilityOfInstance)
 	for index, _ := range controlServer.globalNodeTable {
-		if controlServer.globalNodeTable[index].churnable {
+		if controlServer.globalNodeTable[index].churnable && (controlServer.churnMode == "down" && controlServer.globalNodeTable[index].status == "down") == false {
 			controlServer.globalNodeTable[index].probabilityUp = probabilityOfInstanceUp
 			controlServer.globalNodeTable[index].probabilityDown = probabilityOfInstanceDown
 			controlServer.environment.RecordMessage("The probability of this instance is %v. Its upProbability is %v. Its downProbability is %v.", probabilityOfInstance, probabilityOfInstanceUp, probabilityOfInstanceDown)
@@ -303,7 +303,7 @@ func (controlServer *controlServer) globalNodeTableSanitizer() {
 		controlServer.environment.RecordMessage("Sanitizer deteced probabilitys higher then one issuing new values. As close as possible to the original one. This step ignores the entered frequency.")
 		correctionModifier := 1 / maxValue
 		for indexA, _ := range controlServer.globalNodeTable {
-			if controlServer.globalNodeTable[indexA].churnable {
+			if controlServer.globalNodeTable[indexA].churnable && (controlServer.churnMode == "down" && controlServer.globalNodeTable[indexA].status == "down") == false {
 				controlServer.globalNodeTable[indexA].probabilityUp = controlServer.globalNodeTable[indexA].probabilityUp * correctionModifier
 				if math.IsInf(controlServer.globalNodeTable[indexA].probabilityUp, 1) || math.IsNaN(controlServer.globalNodeTable[indexA].probabilityUp) {
 					controlServer.globalNodeTable[indexA].probabilityUp = 1

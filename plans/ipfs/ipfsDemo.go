@@ -42,7 +42,8 @@ import (
 
 // Parts of this function are based on code from Testground (pingpong.go).
 // Source: https://github.com/testground/testground/blob/master/plans/network/pingpong.go
-// License: MIT License (https://github.com/testground/testground/blob/master/LICENSE)
+// License: MIT License (https://github.com/testground/testground/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/testground/testground/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: Added some comments for better understanding.
 // --- Begin of copied section (Testground) ---
@@ -226,7 +227,8 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 
 // This function is copied from Testground (pingpong.go).
 // Source: https://github.com/testground/testground/blob/master/plans/network/pingpong.go
-// License: MIT License (https://github.com/testground/testground/blob/master/LICENSE)
+// License: MIT License (https://github.com/testground/testground/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/testground/testground/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: none
 func sameAddrs(a, b []net.Addr) bool { //compares to addresses and throws an error if they are not equal. copied from pingpong.go
@@ -247,7 +249,8 @@ func sameAddrs(a, b []net.Addr) bool { //compares to addresses and throws an err
 
 // This function is copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: none
 func setupPlugins(externalPluginsPath string) error {
@@ -271,7 +274,8 @@ func setupPlugins(externalPluginsPath string) error {
 
 // Parts of this function are based on code from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: Changed code for clean integration with Testground in the copied part.
 // --- Begin of copied section (IPFS Kubo project) ---
@@ -321,7 +325,8 @@ func createTempRepo(runenv *runtime.RunEnv, clientControl *clientControl, testNe
 
 // This function is copied from the IPFS Kubo project and was then slightly modified.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: Changed code for clean integration with Testground.
 // Creates an IPFS node and returns its coreAPI.
@@ -353,14 +358,16 @@ func createNode(ctx context.Context, repoPath string, runenv *runtime.RunEnv) (*
 
 // This statement is copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: none
 var loadPluginsOnce sync.Once
 
 // This function is largely copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: Changed code for clean integration with Testground. Added some additional recording to make the process more transparent.
 // Spawns a node to be used just for this run (i.e. creates a tmp repo).
@@ -395,7 +402,8 @@ func spawnEphemeral(ctx context.Context, runenv *runtime.RunEnv, clientControl *
 
 // This function is largely copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: Changed code for clean integration with Testground. Made the function case sensitive meaning if the context is canceled function exits immediately.
 // A second return value was added to make the circumstances of the return clear to other functions. Added a success message to make result more transparent.
@@ -452,7 +460,8 @@ func connectToPeers(runenv *runtime.RunEnv, ctx context.Context, ipfs icore.Core
 
 // This function is copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: The function was modified in one way the function files.NewSerialFile(...) and files.Node are now imported from a different package.
 func getUnixfsNode(path string) (files.Node, error) {
@@ -582,7 +591,8 @@ func generateFilesForRepo(runenv *runtime.RunEnv, ctx context.Context, nodeIPFSA
 
 		// The following code is adapted from the IPFS Kubo project.
 		// Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-		// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+		// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+		// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 		// Changes: Some variable names where modified. The error handling and when and if a success message is displayed has bee changed.
 		fileToAppend, err := getUnixfsNode(path)
 		if err != nil {
@@ -604,7 +614,8 @@ func generateFilesForRepo(runenv *runtime.RunEnv, ctx context.Context, nodeIPFSA
 
 // Large parts of this function are copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 // Copyright (c) Protocol Labs
 // Adjustments: Changed code for clean integration with Testground. Renamed some variables. Made the success message conditional.
 func getCidFileFromIPFSNetwork(runenv *runtime.RunEnv, peerCidFile path.ImmutablePath, outputBasePath string, localNode icore.CoreAPI, ctx context.Context, downloadTimeout time.Duration) string { //basically a function to retrieve a cidFile from the network, the function is based on the main function of https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
@@ -682,7 +693,8 @@ func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv
 
 		// The following code is copied from the IPFS Kubo project.
 		// Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-		// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+		// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+		// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 		// Changes: Some variable names where modified. The error handling and when and if a success message is displayed has bee changed.
 		// --- Begin of copied section (IPFS Kubo project) ---
 		outPutBasePath, err := os.MkdirTemp("", directoryPrefix)

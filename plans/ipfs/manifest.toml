@@ -1,4 +1,8 @@
 name = "ipfs"
+
+[run]
+task_timeout = "10h"
+
 [defaults]
 builder = "docker:go"
 runner = "local:docker"

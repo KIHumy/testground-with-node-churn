@@ -72,7 +72,8 @@ func (clientControl *clientControl) ipfsRecover() {
 
 	// The following code is adapted from the IPFS Kubo project.
 	// Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
-	// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE)
+	// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
+	// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
 	// Changes: Some variable names where modified. The error handling was changed to make it compatible to Testground and the error message was altered.
 	// There are more input parameters because a modified version of the spawnEphemeral function has been used.
 	// --- Begin of adapted section (IPFS Kubo project) ---

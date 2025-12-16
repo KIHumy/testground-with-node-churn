@@ -148,6 +148,7 @@ func (controlServer *controlServer) readingRoutine(connection net.Conn) {
 		} else {
 			controlServer.readWriteSynchronisation.RUnlock()
 		}
+
 		go controlServer.controlServerMessageSlicer(string(readBuff[:numberOfMessageBytes]), connection)
 
 	}
