@@ -24,7 +24,7 @@ type basicNodeInfo struct { //the way node informations are stored at the contro
 }
 
 // the code for the basic server struct was inspired by the tutorial https://www.youtube.com/watch?v=qJQrrscB1-4
-type controlServer struct {
+type controlServer struct { //The struct for the churn controller.
 	controlAddr                      net.Addr
 	listener                         net.Listener
 	environment                      *runtime.RunEnv
@@ -51,13 +51,13 @@ type controlServer struct {
 }
 
 // the basic server code was inspired by the tutorial https://www.youtube.com/watch?v=qJQrrscB1-4
-func startupChurnController(controlAddr net.Addr, numberOfInitialBootstrappers int, environment *runtime.RunEnv) {
+func startupChurnController(controlAddr net.Addr, numberOfInitialBootstrappers int, environment *runtime.RunEnv) { //Initializes and starts the churn controller and all relevant routines.
 	environment.RecordMessage("Initialize churn controller.")
 	controlServer := &controlServer{
 		controlAddr:                      controlAddr,
 		environment:                      environment,
 		nodeInfoChannel:                  make(chan basicNodeInfo),
-		establishedConnections:           make(chan net.Conn, 100), //do increase this if the instances go beyond 30 also if you have time fix route cause that this blocks programm if to small
+		establishedConnections:           make(chan net.Conn, 100),
 		bootstrapInfo:                    []string{},
 		globalNodeTable:                  []basicNodeInfo{},
 		activeConnections:                []net.Conn{},
@@ -92,7 +92,7 @@ func startupChurnController(controlAddr net.Addr, numberOfInitialBootstrappers i
 }
 
 // the basic code how to create a listener and how to accept connections was inspired by the tutorial https://www.youtube.com/watch?v=qJQrrscB1-4
-func (controlServer *controlServer) startUpListener(waitGroup *sync.WaitGroup) {
+func (controlServer *controlServer) startUpListener(waitGroup *sync.WaitGroup) { //Creates a listener and waits for connections.
 	defer waitGroup.Done()
 	var err error
 	controlServer.listener, err = net.Listen("tcp4", strings.Split(controlServer.controlAddr.String(), "/")[0]+":4500")
@@ -126,13 +126,13 @@ func (controlServer *controlServer) startUpListener(waitGroup *sync.WaitGroup) {
 }
 
 // the basic reader code of this function was inspired by https://www.youtube.com/watch?v=qJQrrscB1-4
-func (controlServer *controlServer) readingRoutine(connection net.Conn) {
+func (controlServer *controlServer) readingRoutine(connection net.Conn) { //The function to read messages send to the churn controller.
 	defer connection.Close()
 
 	readBuff := make([]byte, 2048)
 
 	for {
-		connection.SetReadDeadline(time.Now().Add(30 * time.Second))
+		connection.SetReadDeadline(time.Now().Add(60 * time.Second))
 		numberOfMessageBytes, err := connection.Read(readBuff)
 		controlServer.readWriteSynchronisation.RLock()
 		if err != nil && err != io.EOF && controlServer.testEndFlag == false {
@@ -154,7 +154,7 @@ func (controlServer *controlServer) readingRoutine(connection net.Conn) {
 	}
 }
 
-func (controlServer *controlServer) bootstrapAssistance() {
+func (controlServer *controlServer) bootstrapAssistance() { //This function is there to build the global node table and ensure that no duplicates are in the active connections.
 
 	var nodeTable []basicNodeInfo                                        //table consisting of all the network information (so all instances execpt controller)
 	for len(nodeTable) < controlServer.environment.TestInstanceCount-1 { //do not proceed until node map has been build. Subtract one because churn controller is counted as instance.
@@ -185,15 +185,15 @@ func (controlServer *controlServer) bootstrapAssistance() {
 	controlServer.decreaseActiveRoutineCounter()
 }
 
-func (controlServer *controlServer) writeToNodeInfoChannel(connection net.Conn, message string) {
+func (controlServer *controlServer) writeToNodeInfoChannel(connection net.Conn, message string) { //This function processes data send to the controller.
 
 	messageContent := strings.Split(message, "--")
-	if len(messageContent) == 3 && strings.Contains(message, "??nodeInfo") { //this is 3 at the moment because  strings contain only ??nodeInfo, role and if the node is chunable or not if more is added adjust length
+	if len(messageContent) == 3 && strings.Contains(message, "??nodeInfo") { //this is 3 at the moment because  strings contain only ??nodeInfo, role and if the node is churnable or not if more is added adjust length
 
 		nodeAdress := connection.RemoteAddr()
 		roleOfNewNode := messageContent[1]
 		var nodeChurnable bool
-		if messageContent[2] == "true" { //convert send string back into bool
+		if messageContent[2] == "true" { //convert sent string back into bool
 			nodeChurnable = true
 		} else {
 			nodeChurnable = false
@@ -240,11 +240,11 @@ func (controlServer *controlServer) writeToNodeInfoChannel(connection net.Conn, 
 
 }
 
-func (controlServer *controlServer) requestBootstrapInfo(currentConnection net.Conn) {
+func (controlServer *controlServer) requestBootstrapInfo(currentConnection net.Conn) { //There to request the bootstrap information from the churn controller.
 	currentConnection.Write([]byte("!!--send the bootstrap information."))
 }
 
-func (controlServer *controlServer) instructionHandler(currentConnection net.Conn, instruction string) { //handles instructions from clients
+func (controlServer *controlServer) instructionHandler(currentConnection net.Conn, instruction string) { //Takes instructions and reacts to them.
 	if strings.Contains(instruction, "!!--Please provide me the Bootstrap information.") {
 		controlServer.readWriteSynchronisation.RLock()                                     //lock for writers
 		if len(controlServer.bootstrapInfo) < controlServer.numberOfNetworkBootstrappers { //if the number of bootstrappers is not set its zero and no records have been saved yet
@@ -318,19 +318,19 @@ func (controlServer *controlServer) instructionHandler(currentConnection net.Con
 	}
 }
 
-func (controlServer *controlServer) increaseActiveRoutineCounter() {
+func (controlServer *controlServer) increaseActiveRoutineCounter() { //Increases the tracker how many routines are active in the churn controller.
 	controlServer.readWriteSynchronisation.Lock()
 	controlServer.currentlyActiveRoutines = controlServer.currentlyActiveRoutines + 1
 	controlServer.readWriteSynchronisation.Unlock()
 }
 
-func (controlServer *controlServer) decreaseActiveRoutineCounter() {
+func (controlServer *controlServer) decreaseActiveRoutineCounter() { //Decreases the tracker how many active routines are active in the churn controller.
 	controlServer.readWriteSynchronisation.Lock()
 	controlServer.currentlyActiveRoutines = controlServer.currentlyActiveRoutines - 1
 	controlServer.readWriteSynchronisation.Unlock()
 }
 
-func (controlServer *controlServer) routineServerShutdownBarrier() {
+func (controlServer *controlServer) routineServerShutdownBarrier() { //This is used as a barrier it blocks the churn controller from shutting down until all other routines are finished.
 	for {
 		controlServer.readWriteSynchronisation.RLock()
 		if controlServer.currentlyActiveRoutines <= 0 {
@@ -343,7 +343,7 @@ func (controlServer *controlServer) routineServerShutdownBarrier() {
 	}
 }
 
-func (controlServer *controlServer) controlServerMessageSlicer(message string, connection net.Conn) {
+func (controlServer *controlServer) controlServerMessageSlicer(message string, connection net.Conn) { //This is used to cut messages which are glued together.
 	var messageSlice []string
 	numberOfInstructionsInMessage := strings.Count(message, "!!")
 	numberOfInformationsInMessage := strings.Count(message, "??")
@@ -375,8 +375,8 @@ func (controlServer *controlServer) controlServerMessageSlicer(message string, c
 		messageSlice = append(messageSlice, message)
 	}
 	for _, oneMessage := range messageSlice {
-		if string(message) != "" {
-			controlServer.environment.RecordMessage(string(oneMessage))
+		if string(oneMessage) != "" {
+			controlServer.environment.RecordMessage("churn controller received: %v", string(oneMessage))
 		}
 		if strings.Contains(string(message), "!!") { //check if message is status message markt by "!!" Prefix
 			go controlServer.instructionHandler(connection, string(oneMessage)) //handle instructions send by client
@@ -388,14 +388,14 @@ func (controlServer *controlServer) controlServerMessageSlicer(message string, c
 	return
 }
 
-func (controlServer *controlServer) changeChurnEndFlag() {
+func (controlServer *controlServer) changeChurnEndFlag() { //This is there to signal the churnControlThread that he should shutdown.
 	controlServer.churnEndFlagSynchronisation.Lock()
 	controlServer.churnEndFlag = true
 	controlServer.churnEndFlagSynchronisation.Unlock()
 	return
 }
 
-func (controlServer *controlServer) barrierBeforeUltimateShutdown() {
+func (controlServer *controlServer) barrierBeforeUltimateShutdown() { //This functions works as a barrier stopping the churn controller from shutting down until all other instances have reported they are finished with their shutdown.
 	controlServer.barrierLock.RLock()
 	for controlServer.instanceCompletedShutdownCounter < controlServer.environment.TestInstanceCount-1 {
 		controlServer.barrierLock.RUnlock()

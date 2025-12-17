@@ -17,9 +17,9 @@ import (
 	"github.com/testground/sdk-go/runtime"
 )
 
-type clientControl struct {
+type clientControl struct { //the struct for the interface the client uses to communicate to the churn controller
 	messageChannel              chan string //channel for the client reader (informational)
-	churnChannel                chan string //channel to enable immediate reaktion to churn
+	churnChannel                chan string //channel to enable immediate reaction to churn
 	shutdownChannel             chan string
 	activeOrPassive             bool //flag to check instance down or up
 	connectionToController      net.Conn
@@ -36,8 +36,8 @@ type clientControl struct {
 	churnMode                   string
 	nodeAPI                     icore.CoreAPI
 	clientIPFSNode              *core.IpfsNode
-	motherContext               context.Context //mother Context used for deriving the context wich is usually context.WithCancel()
-	context                     context.Context //context to synchronize all functions of netwrok behaviour during down
+	motherContext               context.Context //mother context used for deriving the context wich is usually context.WithCancel()
+	context                     context.Context //context to synchronize all functions of network behaviour during down
 	contextCancelFunc           context.CancelFunc
 	cancelFrustrationTimer      context.CancelFunc
 	ipfsPortCounter             int
@@ -51,7 +51,7 @@ type clientControl struct {
 	protocol                    string
 }
 
-func initiateNewClientControl(connection net.Conn, myRole string, instancePatience time.Duration, instancePatienceEnabled bool, protocol string, environment *runtime.RunEnv) *clientControl { //written by maintainer (Thorwin Bergholz)
+func initiateNewClientControl(connection net.Conn, myRole string, instancePatience time.Duration, instancePatienceEnabled bool, protocol string, environment *runtime.RunEnv) *clientControl { //This function generates a new client control instance.
 	return &clientControl{
 		messageChannel:              make(chan string),
 		churnChannel:                make(chan string),
@@ -74,10 +74,10 @@ func initiateNewClientControl(connection net.Conn, myRole string, instancePatien
 	}
 }
 
-func (clientControl *clientControl) clientChurnReader() {
+func (clientControl *clientControl) clientChurnReader() { //This is the reader of the client. It is used to receive messages from the control network.
 	clientReadBuff := make([]byte, 2048)
 	for {
-		clientControl.connectionToController.SetReadDeadline(time.Now().Add(30 * time.Second))
+		clientControl.connectionToController.SetReadDeadline(time.Now().Add(60 * time.Second))
 		numberOfMessageBytes, error := clientControl.connectionToController.Read(clientReadBuff)
 		clientControl.clientSynchronisation.RLock()
 		if error != nil && clientControl.testEndFlag == false {
@@ -97,7 +97,7 @@ func (clientControl *clientControl) clientChurnReader() {
 	}
 }
 
-func (clientControl *clientControl) setNetworkBootstrapInformation() {
+func (clientControl *clientControl) setNetworkBootstrapInformation() { //This function is used to receive and set the network bootstrap information of the IPFS network.
 	var bootstrapSlice []string
 	var networkBootstrapString string
 	gotTheCorrectMessage := false
@@ -119,7 +119,7 @@ func (clientControl *clientControl) setNetworkBootstrapInformation() {
 	clientControl.networkBootstrapInformation = bootstrapSlice
 }
 
-func (clientControl *clientControl) setNetCids() {
+func (clientControl *clientControl) setNetCids() { //This function is there to receive and set the CIDs available in the network.
 	var cidSlice []string
 	gotTheCorrectMessage := false
 	var networkBootstrapString string
@@ -140,7 +140,7 @@ func (clientControl *clientControl) setNetCids() {
 	clientControl.netCids = cidSlice
 }
 
-func (clientControl *clientControl) startInstructionHandler(instruction string) {
+func (clientControl *clientControl) startInstructionHandler(instruction string) { //This function is used to respond to requests of the churn controller.
 
 	if strings.Contains(instruction, "!!--send the bootstrap information.") { //response if bootstrap information for ipfs node is requested from this node
 		clientControl.clientSynchronisation.RLock()
@@ -153,7 +153,7 @@ func (clientControl *clientControl) startInstructionHandler(instruction string) 
 			} else {
 				clientControl.environment.RecordMessage("I informed the controller that bootstrap information is unavailable at the moment.")
 			}
-		} else { //only if clause is reached else some how not i don't know why
+		} else {
 			clientControl.sleepAndJitter()
 			numberOfBytes, err := clientControl.connectionToController.Write([]byte("??bootstrapListInfo--" + clientControl.clientBootstrapInformation)) //tell node information to churn controller
 			clientControl.clientSynchronisation.RUnlock()
@@ -188,13 +188,13 @@ func (clientControl *clientControl) requestNetworkBootstrapInfo() { //Request th
 	clientControl.environment.RecordMessage("I requested the bootstrap information.")
 }
 
-func (clientControl *clientControl) setClientControlBootstrapInformation(bootstrapInfo string) {
+func (clientControl *clientControl) setClientControlBootstrapInformation(bootstrapInfo string) { //This function sets the information over which CIDs the client provides to others.
 	clientControl.clientSynchronisation.Lock()
 	clientControl.clientBootstrapInformation = bootstrapInfo
 	clientControl.clientSynchronisation.Unlock()
 }
 
-func (clientControl *clientControl) sleepAndJitter() { //Done to stop bursting and dosing the server.
+func (clientControl *clientControl) sleepAndJitter() { //Done to reduce the load on the server.
 	jitter := rand.Intn(10) + 15
 	sleepDuration := strconv.Itoa(jitter) + "s"
 	sleepTime, error := time.ParseDuration(sleepDuration)
@@ -205,15 +205,15 @@ func (clientControl *clientControl) sleepAndJitter() { //Done to stop bursting a
 	time.Sleep(sleepTime)
 }
 
-func (clientControl *clientControl) returnTheNetworkBootstrappers() []string {
+func (clientControl *clientControl) returnTheNetworkBootstrappers() []string { //gives the network bootstrappers back
 	return clientControl.networkBootstrapInformation
 }
 
-func (clientControl *clientControl) returnNetCids() []string {
+func (clientControl *clientControl) returnNetCids() []string { //gives the network CIDs back
 	return clientControl.netCids
 }
 
-func (clientControl *clientControl) gossipIPFSCids() {
+func (clientControl *clientControl) gossipIPFSCids() { //This sends the CIDs this node provides to the churn controler.
 	messageString := "??IPFSNetworkCids"
 	for _, cidStrings := range clientControl.clientIPFSCids {
 		messageString = messageString + "--" + cidStrings
@@ -221,7 +221,7 @@ func (clientControl *clientControl) gossipIPFSCids() {
 	clientControl.connectionToController.Write([]byte(messageString))
 }
 
-func (clientControl *clientControl) setClientCids(cidSlice []string) {
+func (clientControl *clientControl) setClientCids(cidSlice []string) { //This sets the CIDs the client has present.
 	for _, cid := range cidSlice {
 		if slices.Contains(clientControl.clientIPFSCids, cid) {
 			continue
@@ -231,24 +231,24 @@ func (clientControl *clientControl) setClientCids(cidSlice []string) {
 	}
 }
 
-func (clientControl *clientControl) requestNetCids() {
+func (clientControl *clientControl) requestNetCids() { //This is used to request the CIDs of all nodes in the network.
 	clientControl.sleepAndJitter()
 	clientControl.connectionToController.Write([]byte("!!--Please send me the available CIDs in the Network."))
 }
 
-func (clientControl *clientControl) returnInstanceCids() []string {
+func (clientControl *clientControl) returnInstanceCids() []string { //This is used to return the CIDs of the client.
 	return clientControl.clientIPFSCids
 }
 
-func (clientControl *clientControl) announcePlanFinished() {
+func (clientControl *clientControl) announcePlanFinished() { //This is used to announce that the instance has finished its tasks.
 	clientControl.connectionToController.Write([]byte("!!--Finished plan."))
 }
 
-func (clientControl *clientControl) announceShutdownFinished() {
+func (clientControl *clientControl) announceShutdownFinished() { //This is used to show the churn controller that the shutdown has finished.
 	clientControl.connectionToController.Write([]byte("!!--Shutdown finished."))
 }
 
-func (clientControl *clientControl) awaitCloseSignalAndCloseClientControl() {
+func (clientControl *clientControl) awaitCloseSignalAndCloseClientControl() { //This function is there to shutdown this client control.
 	var closeSignal string
 	closeSignal = ""
 	for closeSignal != "??--Test ended you can close now." {
@@ -269,19 +269,19 @@ func (clientControl *clientControl) awaitCloseSignalAndCloseClientControl() {
 	return
 }
 
-func (clientControl *clientControl) increaseActiveRoutineCounter() {
+func (clientControl *clientControl) increaseActiveRoutineCounter() { //Increases the tracker of how many routines of this client control are still active.
 	clientControl.clientSynchronisation.Lock()
 	clientControl.currentlyActiveRoutines = clientControl.currentlyActiveRoutines + 1
 	clientControl.clientSynchronisation.Unlock()
 }
 
-func (clientControl *clientControl) decreaseActiveRoutineCounter() {
+func (clientControl *clientControl) decreaseActiveRoutineCounter() { //Decreases the tracker of how many routines of this client control are still active.
 	clientControl.clientSynchronisation.Lock()
 	clientControl.currentlyActiveRoutines = clientControl.currentlyActiveRoutines - 1
 	clientControl.clientSynchronisation.Unlock()
 }
 
-func (clientControl *clientControl) routineClientShutdownBarrier() {
+func (clientControl *clientControl) routineClientShutdownBarrier() { //This barrier is there to enforce a shutdown of all client control routines.
 	for {
 		clientControl.clientSynchronisation.RLock()
 		if clientControl.currentlyActiveRoutines <= 0 {
@@ -294,11 +294,11 @@ func (clientControl *clientControl) routineClientShutdownBarrier() {
 	}
 }
 
-func (clientControl *clientControl) reportInstanceReadyForChurn() {
+func (clientControl *clientControl) reportInstanceReadyForChurn() { //This notifies the controller that the client is ready for the churn to start.
 	clientControl.connectionToController.Write([]byte("!!--ready for churn."))
 }
 
-func (clientControl *clientControl) barrierBeforeChurn() {
+func (clientControl *clientControl) barrierBeforeChurn() { //This functions as barrier it can be used to stop the client until he gets the start signal from the controller.
 	for {
 		message := <-clientControl.messageChannel
 		if message == "??--Controller is ready Churn starts." {
@@ -307,18 +307,18 @@ func (clientControl *clientControl) barrierBeforeChurn() {
 	}
 }
 
-func (clientControl *clientControl) setMotherContext(ctx context.Context) {
+func (clientControl *clientControl) setMotherContext(ctx context.Context) { //This function sets a context which can be used to derive contexts for the frustration functions and the cancel context for the node.
 	clientControl.motherContext = ctx
 }
 
-func sanitizeChurnMode(churnMode string) string {
+func sanitizeChurnMode(churnMode string) string { //This function is there to stop invalid churn modes from accessing the test.
 	if churnMode != "down" && churnMode != "downAndRecover" {
 		churnMode = "downAndRecover"
 	}
 	return churnMode
 }
 
-func (clientControl *clientControl) clientSideMessageSlicer(message string) {
+func (clientControl *clientControl) clientSideMessageSlicer(message string) { //This function is there to seperate messages which are glued together.
 	var messageSlice []string
 	numberOfInstructionsInMessage := strings.Count(message, "!!")
 	numberOfInformationsInMessage := strings.Count(message, "??")
@@ -365,7 +365,7 @@ func (clientControl *clientControl) clientSideMessageSlicer(message string) {
 	return
 }
 
-func (clientControl *clientControl) communicateNodeInfoToController(role string, churnable string) {
+func (clientControl *clientControl) communicateNodeInfoToController(role string, churnable string) { //This function is there to tell the churn controller the clients role and whether he is susceptible to churn or not.
 	numberOfBytes, err := clientControl.connectionToController.Write([]byte("??nodeInfo--" + role + "--" + churnable)) //tell node information to churn controller
 	if err != nil {
 		clientControl.environment.RecordMessage("Write to controller failed with: %v", err)
@@ -402,7 +402,7 @@ func (clientControl *clientControl) checkFrustration() bool { //Checks if the ti
 	return false //if patience is disabled node will always continue with its tasks
 }
 
-func (clientControl *clientControl) churnHandler() {
+func (clientControl *clientControl) churnHandler() { //This function executes the reactions to churn signals from the churn controller based on the signal it received.
 	for {
 		instruction := <-clientControl.churnChannel
 		if instruction == "!!--down" {
@@ -431,7 +431,7 @@ func (clientControl *clientControl) churnHandler() {
 			} else {
 				clientControl.environment.RecordMessage("The entered protocol is not available, because of that the protocol will not show a reaction to down and recover.")
 			}
-			clientControl.clientChurnSynchronisation.Unlock() //unly proceed with network behaviour after startup process is finished
+			clientControl.clientChurnSynchronisation.Unlock() //only proceed with network behaviour after startup process is finished
 		}
 		if clientControl.testEndFlag == true {
 			clientControl.decreaseActiveRoutineCounter()

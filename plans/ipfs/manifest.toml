@@ -30,7 +30,7 @@ instances = { min = 2, max = 31, default = 10 }
    lambdaScaleParameter = { type = "float64", desc = "is the lambda in a weibull distribution formula only active if default distribution is not used", default = "1" }
    kShapeParameter = { type = "float64", desc = "is the k parameter in a wibull distribution formula only active if default distribution is not used", default = "0.5" }
    patience = { type = "string", desc = "describes the time a node will accept no progress until it aborts its tasks", default = "5m"}
-   patienceEnabled = { type = "bool", desc = "enables the patience function or disables it", default = "true"}
+   patienceEnabled = { type = "bool", desc = "Enables the patience function or disables it.If this is disabled the test may fail with context deadline exceeded.", default = "true"}
 
 [build.env]
 GOPROXY = "https://proxy.golang.org,direct"

@@ -12,3 +12,11 @@ The basic server code was inspired by:
 
 ## codebase
 The code in this directory, that is not marked as belonging to some other source, was written by the maintainer (Thorwin Bergholz).
+
+## important for testplan functionality
+The time this test takes is often quite long even on default settings. If used include the .env.toml in $TESTGROUND_HOME as described in: 
+- https://docs.testground.ai/master/#/getting-started
+or use the Testground version of this fork and don't change the $TESTGROUND_HOME directory after installation. If this is not done the test will often hit the task timeout and fail with context deadline exceeded.
+
+The .env.toml can be found under:
+- https://github.com/KIHumy/testground-with-node-churn/blob/master/.env.toml

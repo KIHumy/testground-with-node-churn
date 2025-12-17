@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-type frequency struct {
+type frequency struct { //This struct is the representation of the churn frequency.
 	numberOfEvent int
 	timePeriod    time.Duration
 }
 
-func (controlServer *controlServer) setChurnFrequency(numberOfEvent int, timePeriod time.Duration) {
+func (controlServer *controlServer) setChurnFrequency(numberOfEvent int, timePeriod time.Duration) { //This function sets the churn frequency at the controller.
 	controlServer.churnFrequency = frequency{
 		numberOfEvent: numberOfEvent,
 		timePeriod:    timePeriod,
@@ -20,9 +20,9 @@ func (controlServer *controlServer) setChurnFrequency(numberOfEvent int, timePer
 
 }
 
-func (controlServer *controlServer) churnControlThread() {
+func (controlServer *controlServer) churnControlThread() { //This function handles the churn itself. It regularly checks all instances and sends messages when they should change their state.
 	controlServer.readWriteSynchronisation.RLock()
-	for controlServer.readyForChurnCounter != controlServer.environment.TestInstanceCount-1 { //loop until bootstrapPhase begins
+	for controlServer.readyForChurnCounter != controlServer.environment.TestInstanceCount-1 { //Loop until all nodes have signaled readiness for the churn to start.
 		controlServer.readWriteSynchronisation.RUnlock()
 		time.Sleep(10 * time.Second)
 		controlServer.readWriteSynchronisation.RLock()
@@ -107,7 +107,7 @@ func (controlServer *controlServer) churnControlThread() {
 	return
 }
 
-func (controlServer *controlServer) calculateAvailabilityIntoProbabilityOfInstance(probabilityOfInstance float64) (float64, float64) {
+func (controlServer *controlServer) calculateAvailabilityIntoProbabilityOfInstance(probabilityOfInstance float64) (float64, float64) { //This function implements the availability parameter for all instance probabilities.
 	if controlServer.churnMode == "down" {
 		return 0, probabilityOfInstance
 	}
@@ -116,7 +116,7 @@ func (controlServer *controlServer) calculateAvailabilityIntoProbabilityOfInstan
 	return probabilityOfInstanceUp, probabilityOfInstanceDown
 }
 
-func (controlServer *controlServer) calculateRuntimeDistributionNormal() {
+func (controlServer *controlServer) calculateRuntimeDistributionNormal() { //This function implements a global equal probability distribution for the instance probabilities.
 	var numberOfChurnableNodes float64
 	numberOfChurnableNodes = 0
 	for _, node := range controlServer.globalNodeTable {
@@ -139,7 +139,7 @@ func (controlServer *controlServer) calculateRuntimeDistributionNormal() {
 	return
 }
 
-func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaScaleParameter float64, kShapeParameter float64) {
+func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaScaleParameter float64, kShapeParameter float64) { //This function calculates a weibull distribution for the instance probabilities.
 	var numberOfChurnableNodes float64
 	numberOfChurnableNodes = 0
 	for _, node := range controlServer.globalNodeTable {
@@ -157,15 +157,15 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 	}
 	var valueSlice []float64
 	for _, hurdle := range thresholdSlice {
-		valueOfProbability := (lambdaScaleParameter * math.Pow(-math.Log(1-hurdle), 1/kShapeParameter)) + 1 //use quantile function to find number of steps each node should make until break add 1 as offset because we cannot churn at zero one is lowest value
+		valueOfProbability := (lambdaScaleParameter * math.Pow(-math.Log(1-hurdle), 1/kShapeParameter)) + 1 //use quantile function to find number of steps each node should make before shutdown add 1 as offset because we cannot churn at zero one is lowest value
 		valueSlice = append(valueSlice, valueOfProbability)
 	}
 
 	var protoSliceProbability []float64
 	var probabilitySum float64
 	var frequencyModifier float64
-	for _, value := range valueSlice { //use step number to calculate proto probability. Proto value because not accounting for frequency and liveness yet.
-		//Because of the restrictions of the distribution it maybe that the distribution is not correct and might cause probabilitys higher then one. liveness will be applied for network not for instance
+	for _, value := range valueSlice { //use step number to calculate proto probability. Proto value because not accounting for frequency and availability yet.
+		//Because of the restrictions of the distribution it maybe that the distribution is not correct and might cause probabilities higher then one.
 		protoValueProbability := 1 / value
 		protoSliceProbability = append(protoSliceProbability, protoValueProbability)
 		probabilitySum = probabilitySum + protoValueProbability
@@ -176,11 +176,11 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 		protoSliceProbability[index] = protoSliceProbability[index] * frequencyModifier
 		controlServer.environment.RecordMessage("This is the probability after the frequency scaler: %v", protoSliceProbability[index])
 	}
-	if controlServer.checkForSliceDidntExceedOne(protoSliceProbability) {
+	if controlServer.checkForSliceDidntExceedOne(protoSliceProbability) { //Checks if probabilities higher than one have occured.
 		controlServer.environment.RecordMessage("Probability calculation was able to apply frequency Modifier sucessfully.")
 	} else {
 		controlServer.environment.RecordMessage("Resulting probabilities have at least one value exceeding 1. Therefore Correction modifier will be calculated.")
-		correctionModifier := controlServer.calculateCorrectionModifier(protoSliceProbability, frequencyModifier)
+		correctionModifier := controlServer.calculateCorrectionModifier(protoSliceProbability, frequencyModifier) //Used to correct probabilities higher than one.
 		controlServer.environment.RecordMessage("Apply Correction Modifier. This means frequency will no longer be maintained.")
 		for indexA, _ := range protoSliceProbability {
 			protoSliceProbability[indexA] = protoSliceProbability[indexA] * correctionModifier
@@ -206,15 +206,15 @@ func (controlServer *controlServer) calculateRuntimeDistributionWeibull(lambdaSc
 	return
 }
 
-func (controlServer *controlServer) sendDownSignal(currentConnection net.Conn) {
+func (controlServer *controlServer) sendDownSignal(currentConnection net.Conn) { //This function sends a down signal to the client.
 	currentConnection.Write([]byte("!!--down"))
 }
 
-func (controlServer *controlServer) sendRecoverSignal(currentConnection net.Conn) {
+func (controlServer *controlServer) sendRecoverSignal(currentConnection net.Conn) { //This function sends a recover signal to the client.
 	currentConnection.Write([]byte("!!--recover"))
 }
 
-func (controlServer *controlServer) signalChurnStart() {
+func (controlServer *controlServer) signalChurnStart() { //This function is there to signal the clients that the churn starts now.
 	controlServer.readWriteSynchronisation.RLock()
 	for _, node := range controlServer.globalNodeTable {
 		controlServer.readWriteSynchronisation.RUnlock()
@@ -224,7 +224,7 @@ func (controlServer *controlServer) signalChurnStart() {
 	controlServer.readWriteSynchronisation.RUnlock()
 }
 
-func (controlServer *controlServer) inputSanitizerControlFunctions(numberOfEvent int, timePeriod time.Duration, errorFromParse error) (int, time.Duration) {
+func (controlServer *controlServer) inputSanitizerControlFunctions(numberOfEvent int, timePeriod time.Duration, errorFromParse error) (int, time.Duration) { //This function is there to check if the inputs provided to the controller are valid.
 	if numberOfEvent < 0 {
 		controlServer.environment.RecordMessage("Your input numberOfEvent was to low (lower then zero) and has been altered to 0.")
 		numberOfEvent = 0
@@ -253,7 +253,7 @@ func (controlServer *controlServer) inputSanitizerControlFunctions(numberOfEvent
 	return numberOfEvent, timePeriod
 }
 
-func (controlServer *controlServer) checkForSliceDidntExceedOne(slice []float64) bool {
+func (controlServer *controlServer) checkForSliceDidntExceedOne(slice []float64) bool { //This function checks wether the entered slice has a value higher than one.
 	for _, value := range slice {
 		if value > 1 {
 			return false
@@ -262,7 +262,7 @@ func (controlServer *controlServer) checkForSliceDidntExceedOne(slice []float64)
 	return true
 }
 
-func (controlServer *controlServer) calculateCorrectionModifier(slice []float64, modifier float64) float64 {
+func (controlServer *controlServer) calculateCorrectionModifier(slice []float64, modifier float64) float64 { //This function calculates the correction modifier in the weibull distribution.
 	var maxValue float64
 	for index, value := range slice {
 		if index == 0 {
@@ -281,7 +281,7 @@ func (controlServer *controlServer) calculateCorrectionModifier(slice []float64,
 	return newModifier
 }
 
-func (controlServer *controlServer) globalNodeTableSanitizer() {
+func (controlServer *controlServer) globalNodeTableSanitizer() { //This function checks the result of the distribution functions and corrects them if invalid.
 	var maxValue float64
 	for index, valueA := range controlServer.globalNodeTable {
 		if index == 0 {

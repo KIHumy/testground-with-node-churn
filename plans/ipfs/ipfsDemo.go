@@ -11,12 +11,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
-	//"path/filepath"
 	"sync"
 	"time"
 
-	//"github.com/ipfs/testground/sdk/runtime"
 	"github.com/ipfs/boxo/bootstrap"
 	files "github.com/ipfs/boxo/files"
 	"github.com/ipfs/boxo/path"
@@ -25,12 +22,7 @@ import (
 	"github.com/ipfs/kubo/core"
 	"github.com/ipfs/kubo/core/coreapi"
 	icore "github.com/ipfs/kubo/core/coreiface"
-
 	"github.com/ipfs/kubo/core/node/libp2p"
-
-	//"github.com/ipfs/kubo/plugin/loader"
-
-	//"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/ipfs/kubo/plugin/loader"
 	"github.com/ipfs/kubo/repo/fsrepo"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -40,15 +32,14 @@ import (
 	"github.com/testground/sdk-go/runtime"
 )
 
-// Parts of this function are based on code from Testground (pingpong.go).
+// Parts of this function are copied from Testground (pingpong.go).
 // Source: https://github.com/testground/testground/blob/master/plans/network/pingpong.go
 // License: MIT License (https://github.com/testground/testground/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/testground/testground/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
-// Adjustments: Added some comments for better understanding.
+// Adjustments: Changed the Routing policy in the network Config to allowAll.
 // --- Begin of copied section (Testground) ---
-func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //Initialization of test copied from pingpong.go
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Hour)
+func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //This function organizes the test and is the first function that is called by main.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Hour)
 	defer cancel()
 
 	runenv.RecordMessage("before sync.MustBoundClient")
@@ -59,39 +50,33 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 	if err != nil {
 		return err
 	}
-	//definition of the network copied from pingpong.go
-	config := &network.Config{ //definition of the struct config of type network.Config
+
+	config := &network.Config{
 		// Control the "default" network. At the moment, this is the only network.
-		Network: "default", //is the name of the network that we configure
+		Network: "default",
 
 		// Enable this network. Setting this to false will disconnect this test
 		// instance from this network. You probably don't want to do that.
-		Enable: true, //enables this network device
-		Default: network.LinkShape{ //Default is the default link shaping rule. network.Linkshape describes the way the traffic in the network behaves
-			Latency:   100 * time.Millisecond, // Latency is the egress latency
-			Bandwidth: 1 << 20,                // 1Mib. Bandwidth is egress bytes per second
+		Enable: true,
+		Default: network.LinkShape{
+			Latency:   100 * time.Millisecond,
+			Bandwidth: 1 << 20, // 1Mib
 		},
-		CallbackState: "network-configured", // CallbackState will be signalled when the link changes are applied.
-		// Nodes can use the same state to wait for _all_ or a subset of nodes to
-		// enter the desired network state.
-		RoutingPolicy: network.AllowAll, // RoutingPolicy defines the data routing policy of a certain node. This affects
-		// external networks other than the network 'Default', e.g., external Internet access. (was DenyAll)
+		CallbackState: "network-configured",
+		RoutingPolicy: network.AllowAll,
 	}
 
-	//Network configuration via sidecar copied fom.pingpong.go
-	//ConfigureNetwork asks the sidecar to configure the network, and returns either when the sidecar signals back to us, or when the context expires.
 	runenv.RecordMessage("before netclient.MustConfigureNetwork")
-	netclient.MustConfigureNetwork(ctx, config) //MustConfigureNetwork calls ConfigureNetwork, and panics if it errors.
+	netclient.MustConfigureNetwork(ctx, config)
 
-	// Make sure that the IP addresses don't change unless we request it. copied from pingpong.go
+	// Make sure that the IP addresses don't change unless we request it.
 	if newAddrs, err := net.InterfaceAddrs(); err != nil {
 		return err
 	} else if !sameAddrs(instanceAddrs, newAddrs) {
-		//are not equal.
 		return fmt.Errorf("interfaces changed")
 	}
 
-	seq := client.MustSignalAndWait(ctx, "ip-allocation", runenv.TestInstanceCount) //IP-allocation copied from pingpong.go
+	seq := client.MustSignalAndWait(ctx, "ip-allocation", runenv.TestInstanceCount)
 	runenv.RecordMessage("I am %d", seq)
 
 	// --- End of copied section ---
@@ -99,9 +84,9 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 	patienceString := runenv.StringParam("patience")
 	patience, errPatience := time.ParseDuration(patienceString)
 	patienceEnabled := runenv.BooleanParam("patienceEnabled")
-	var countBootstrapPeers int64 //this block is written by maitainer (TODO:initialize countBootstrapPeers over testinputvalue)
+	var countBootstrapPeers int64
 	countBootstrapPeers = int64(runenv.IntParam("countBootstrapPeers"))
-	var churnable string //this variable should com from input parameters
+	var churnable string
 	numberOfRecords := runenv.IntParam("numberOfRecords")
 	bootstrappersSuceptibleToChurn := runenv.BooleanParam("bootstrappersSuceptibleToChurn")
 	clientSuceptibleToChurn := runenv.BooleanParam("clientSuceptibleToChurn")
@@ -114,7 +99,7 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 	runenv.RecordMessage("Control IP: %v", controlNetIP.String())
 	myRole := whatRoleAmI(rolePrefix, testNetIP, countBootstrapPeers, runenv) //check if this instance is a bootstrap node
 
-	if myRole == "bootstrapper" { // check if you are bootstrapper written by maintainer
+	if myRole == "bootstrapper" {
 		if bootstrappersSuceptibleToChurn {
 			churnable = "true"
 		} else {
@@ -165,7 +150,7 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 		clientControlInstance.increaseActiveRoutineCounter()
 		go clientControlInstance.churnHandler()
 		bootstrapConfig, err := generateNewBootstrapRoutine(clientControlInstance) //generates BootstrapRoutine
-		err = node.Bootstrap(bootstrapConfig)                                      //executes Bootstrap however topology seems to be default "fully connected"
+		err = node.Bootstrap(bootstrapConfig)                                      //executes Bootstrap
 		if err != nil {
 			runenv.RecordMessage("Failed during Bootstrap with: %v", err)
 		} else {
@@ -229,9 +214,8 @@ func ipfsDemo(runenv *runtime.RunEnv, initCtx *testrun.InitContext) error { //In
 // Source: https://github.com/testground/testground/blob/master/plans/network/pingpong.go
 // License: MIT License (https://github.com/testground/testground/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/testground/testground/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
-// Adjustments: none
-func sameAddrs(a, b []net.Addr) bool { //compares to addresses and throws an error if they are not equal. copied from pingpong.go
+// Adjustments: Added a comment to explain what the function does.
+func sameAddrs(a, b []net.Addr) bool { //compares two addresses and returns false if they are not equal.
 	if len(a) != len(b) {
 		return false
 	}
@@ -251,7 +235,6 @@ func sameAddrs(a, b []net.Addr) bool { //compares to addresses and throws an err
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
 // Adjustments: none
 func setupPlugins(externalPluginsPath string) error {
 	// Load any external plugins if available on externalPluginsPath
@@ -272,14 +255,13 @@ func setupPlugins(externalPluginsPath string) error {
 	return nil
 }
 
-// Parts of this function are based on code from the IPFS Kubo project.
+// Parts of this function are copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
-// Adjustments: Changed code for clean integration with Testground in the copied part.
+// Adjustments: Changed code for clean integration with Testground in the copied part. Changed some error messages.
 // --- Begin of copied section (IPFS Kubo project) ---
-func createTempRepo(runenv *runtime.RunEnv, clientControl *clientControl, testNetIP net.Addr) (string, error) {
+func createTempRepo(runenv *runtime.RunEnv, clientControl *clientControl, testNetIP net.Addr) (string, error) { //Creates a repo for the IPFS node.
 	repoPath, err := os.MkdirTemp("", "ipfs-shell-*")
 	if err != nil {
 		runenv.RecordMessage("Failed to get temp dir: %v", err)
@@ -327,10 +309,9 @@ func createTempRepo(runenv *runtime.RunEnv, clientControl *clientControl, testNe
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
-// Adjustments: Changed code for clean integration with Testground.
+// Adjustments: Changed code for clean integration with Testground. Added some additional recording to make the process more transparent.
 // Creates an IPFS node and returns its coreAPI.
-func createNode(ctx context.Context, repoPath string, runenv *runtime.RunEnv) (*core.IpfsNode, error) { //deleted the repopath variable from the original because its not useful i this implementation
+func createNode(ctx context.Context, repoPath string, runenv *runtime.RunEnv) (*core.IpfsNode, error) {
 	//Open the repo
 	repo, err := fsrepo.Open(repoPath)
 	if err != nil {
@@ -360,16 +341,14 @@ func createNode(ctx context.Context, repoPath string, runenv *runtime.RunEnv) (*
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
 // Adjustments: none
 var loadPluginsOnce sync.Once
 
-// This function is largely copied from the IPFS Kubo project.
+// This function is copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
-// Adjustments: Changed code for clean integration with Testground. Added some additional recording to make the process more transparent.
+// Adjustments: Added some additional recording to make the process more transparent. Set the repo path in clientControl.
 // Spawns a node to be used just for this run (i.e. creates a tmp repo).
 func spawnEphemeral(ctx context.Context, runenv *runtime.RunEnv, clientControl *clientControl, testNetIP net.Addr) (icore.CoreAPI, *core.IpfsNode, error) { //added runenv to the input parameters
 	var onceErr error
@@ -400,13 +379,12 @@ func spawnEphemeral(ctx context.Context, runenv *runtime.RunEnv, clientControl *
 	return api, node, err
 }
 
-// This function is largely copied from the IPFS Kubo project.
+// This function is copied from the IPFS Kubo project.
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
 // Adjustments: Changed code for clean integration with Testground. Made the function case sensitive meaning if the context is canceled function exits immediately.
-// A second return value was added to make the circumstances of the return clear to other functions. Added a success message to make result more transparent.
+// A second return value was added to make the circumstances of the return clear to other functions. Added a success message to make results more transparent.
 func connectToPeers(runenv *runtime.RunEnv, ctx context.Context, ipfs icore.CoreAPI, peers []string) (error, string) { //added runenv to this funktion
 	select {
 	case <-ctx.Done():
@@ -462,7 +440,6 @@ func connectToPeers(runenv *runtime.RunEnv, ctx context.Context, ipfs icore.Core
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
 // Adjustments: The function was modified in one way the function files.NewSerialFile(...) and files.Node are now imported from a different package.
 func getUnixfsNode(path string) (files.Node, error) {
 	st, err := os.Stat(path)
@@ -478,7 +455,7 @@ func getUnixfsNode(path string) (files.Node, error) {
 	return f, nil
 }
 
-func whatRoleAmI(rolePrefix string, testNetIP net.Addr, countBootstrapPeers int64, runenv *runtime.RunEnv) string { //decides if a node is a bootstrap peer or not
+func whatRoleAmI(rolePrefix string, testNetIP net.Addr, countBootstrapPeers int64, runenv *runtime.RunEnv) string { //Decides the role a node has.
 
 	controlIPIndex, _ := strconv.ParseInt(strings.Split(strings.Split(testNetIP.String(), "/")[0], ".")[3], 10, 64)
 
@@ -489,12 +466,12 @@ func whatRoleAmI(rolePrefix string, testNetIP net.Addr, countBootstrapPeers int6
 		runenv.RecordMessage("I am a bootstrapper. My IP is %v.", testNetIP.String())
 		return "bootstrapper"
 	} else {
-		runenv.RecordMessage("I am a normal. My IP is %v.", testNetIP.String())
+		runenv.RecordMessage("I am normal. My IP is %v.", testNetIP.String())
 		return "normal"
 	}
 }
 
-func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, netClient *network.Client, runenv *runtime.RunEnv) (net.Addr, net.Addr, string) { //get network ip
+func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, netClient *network.Client, runenv *runtime.RunEnv) (net.Addr, net.Addr, string) { //Function to get the data network IP the control network IP and the role Prefix.
 
 	var ownControlNetworkAdress net.Addr
 	var ownNetworkAdress net.Addr
@@ -517,7 +494,7 @@ func whichIpIsMyNetwork(adressesOfNetwork []net.Addr, netClient *network.Client,
 	return ownNetworkAdress, ownControlNetworkAdress, rolePrefix
 }
 
-func connectToChurnController(testNetIP net.Addr) (net.Conn, error) {
+func connectToChurnController(testNetIP net.Addr) (net.Conn, error) { //function that connects an instance to the churn controller.
 
 	seperatedIP := strings.Split(strings.Split(testNetIP.String(), "/")[0], ".")
 	controlerAdressWithPort := seperatedIP[0] + "." + seperatedIP[1] + ".0.2:4500"
@@ -526,7 +503,7 @@ func connectToChurnController(testNetIP net.Addr) (net.Conn, error) {
 	return connectionToController, err
 }
 
-func generateNewBootstrapRoutine(clientControl *clientControl) (bootstrap.BootstrapConfig, error) {
+func generateNewBootstrapRoutine(clientControl *clientControl) (bootstrap.BootstrapConfig, error) { //Generates a bootstrap config for the bootstrap process of an IPFS node.
 	networkBootstrapInformation := clientControl.returnTheNetworkBootstrappers()
 	var multiAddrSlice []ma.Multiaddr
 	for _, adress := range networkBootstrapInformation {
@@ -546,7 +523,7 @@ func generateNewBootstrapRoutine(clientControl *clientControl) (bootstrap.Bootst
 	return bootstrapConfig, err
 }
 
-func generateFilesForRepo(runenv *runtime.RunEnv, ctx context.Context, nodeIPFSApi icore.CoreAPI, rolePrefix string, clientControl *clientControl, numberOfRecords int) {
+func generateFilesForRepo(runenv *runtime.RunEnv, ctx context.Context, nodeIPFSApi icore.CoreAPI, rolePrefix string, clientControl *clientControl, numberOfRecords int) { //Generates the files that should be provided over the IPFS network and adds them to the IPFS repo.
 
 	prefixInt, err := strconv.Atoi(rolePrefix)
 	var repoData []string
@@ -589,11 +566,11 @@ func generateFilesForRepo(runenv *runtime.RunEnv, ctx context.Context, nodeIPFSA
 	var cidInputSlice []string
 	for _, path := range dataPaths {
 
-		// The following code is adapted from the IPFS Kubo project.
+		// The following code is copied from the IPFS Kubo project.
 		// Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 		// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 		// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-		// Changes: Some variable names where modified. The error handling and when and if a success message is displayed has bee changed.
+		// Changes: Some variable names where modified. The recorded messages and when and if a success message is displayed has been changed.
 		fileToAppend, err := getUnixfsNode(path)
 		if err != nil {
 			runenv.RecordMessage("couldn't get the File")
@@ -604,7 +581,7 @@ func generateFilesForRepo(runenv *runtime.RunEnv, ctx context.Context, nodeIPFSA
 		} else {
 			runenv.RecordMessage("Added CIDFile to directory: %v", cidFile.String())
 		}
-		// --- End of adapted section ---
+		// --- End of copied section ---
 
 		cidInputSlice = append(cidInputSlice, cidFile.String())
 	}
@@ -616,8 +593,7 @@ func generateFilesForRepo(runenv *runtime.RunEnv, ctx context.Context, nodeIPFSA
 // Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 // License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 // License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-// Copyright (c) Protocol Labs
-// Adjustments: Changed code for clean integration with Testground. Renamed some variables. Made the success message conditional.
+// Adjustments: Changed code for clean integration with Testground. Renamed some variables. Made the success message conditional. Added a download timeout.
 func getCidFileFromIPFSNetwork(runenv *runtime.RunEnv, peerCidFile path.ImmutablePath, outputBasePath string, localNode icore.CoreAPI, ctx context.Context, downloadTimeout time.Duration) string { //basically a function to retrieve a cidFile from the network, the function is based on the main function of https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 	select {
 	case <-ctx.Done():
@@ -656,7 +632,7 @@ func getCidFileFromIPFSNetwork(runenv *runtime.RunEnv, peerCidFile path.Immutabl
 	}
 }
 
-func lookUpProviders(runenv *runtime.RunEnv, node *core.IpfsNode, cidAsString string, ctx context.Context) ([]string, string) {
+func lookUpProviders(runenv *runtime.RunEnv, node *core.IpfsNode, cidAsString string, ctx context.Context) ([]string, string) { //A function to find the providers of a CID.
 	select {
 	case <-ctx.Done():
 		runenv.RecordMessage("Lookup Providers stopped context canceled.")
@@ -684,6 +660,7 @@ func lookUpProviders(runenv *runtime.RunEnv, node *core.IpfsNode, cidAsString st
 
 }
 
+// This function defines the behaviour of the client during the test. The client downloads records that are available in the network and continues based on the success of that.
 func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv, node *core.IpfsNode, ctx context.Context, ipfsAPI icore.CoreAPI, outPutDirectoryNumber int, newRandomizer *rand.Rand, downloadTimeout time.Duration) string {
 	select {
 	case <-ctx.Done():
@@ -695,7 +672,7 @@ func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv
 		// Source: https://github.com/ipfs/kubo/blob/master/docs/examples/kubo-as-a-library/main.go
 		// License: MIT License (https://github.com/ipfs/kubo/blob/master/LICENSE-MIT)
 		// License: Apache License (https://github.com/ipfs/kubo/blob/master/LICENSE-APACHE)
-		// Changes: Some variable names where modified. The error handling and when and if a success message is displayed has bee changed.
+		// Changes: Changed one input to os.MkdirTemp(...). The error handling and the error message was changed. In the second part in this function the variable names and the inputs were changed.
 		// --- Begin of copied section (IPFS Kubo project) ---
 		outPutBasePath, err := os.MkdirTemp("", directoryPrefix)
 		if err != nil {
@@ -730,7 +707,7 @@ func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv
 		}
 		instanceToBeDownloaded := cidsNotCurrentlyPresentAtInstance[downloadedIndex]
 		clientControl.clientChurnSynchronisation.Lock()
-		providers, result := lookUpProviders(runenv, node, instanceToBeDownloaded, ctx) //currently ipfs node searches for the first record that it doesn't have and tries to download it
+		providers, result := lookUpProviders(runenv, node, instanceToBeDownloaded, ctx)
 		if result == "canceled" || result == "failure" {
 			os.RemoveAll(outPutBasePath)
 			clientControl.clientChurnSynchronisation.Unlock()
@@ -752,9 +729,9 @@ func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv
 			runenv.RecordMessage("String conversion to cid failed in clientNetworkBehaviour with: %v", err)
 		}
 
-		// --- Begin of section (based on IPFS Kubo project) ---
+		// --- Begin of copied section (IPFS Kubo project) ---
 		cidImmutablePath := path.FromCid(generatedCidFromString)
-		// --- End of section ---
+		// --- End of copied section ---
 
 		clientControl.clientChurnSynchronisation.Lock()
 		result = getCidFileFromIPFSNetwork(runenv, cidImmutablePath, outPutBasePath, ipfsAPI, ctx, downloadTimeout)
@@ -773,7 +750,7 @@ func clientNetworkBehaviour(clientControl *clientControl, runenv *runtime.RunEnv
 
 }
 
-func customIPFSNetworkBootstrap(runenv *runtime.RunEnv, clientControl *clientControl, nodeAPI icore.CoreAPI, ctx context.Context) string { //basically a function that does the connections to all the bootstrappers but no other nodes
+func customIPFSNetworkBootstrap(runenv *runtime.RunEnv, clientControl *clientControl, nodeAPI icore.CoreAPI, ctx context.Context) string { //A function that does the connections to all the bootstrappers but no other nodes
 	_, result := connectToPeers(runenv, ctx, nodeAPI, clientControl.returnTheNetworkBootstrappers())
 	if result == "unableToConnect" {
 		return "bootstrapFailed"
@@ -781,6 +758,7 @@ func customIPFSNetworkBootstrap(runenv *runtime.RunEnv, clientControl *clientCon
 	return ""
 }
 
+// This functions ensures that no invalid inputs are provided to the test plan.
 func sanitizeIPFSInputs(countBootstrapPeers int64, numberOfRecords int, downloadTimeout time.Duration, err error, patience time.Duration, patienceError error, runenv *runtime.RunEnv) (int64, int, time.Duration, time.Duration) {
 	if countBootstrapPeers < 1 {
 		runenv.RecordMessage("The number of bootstrap peers is lower then 1 the network will not work with that and the number was altered to 1.")
